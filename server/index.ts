@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getMonitorState } from './monitor.js';
 import { stopAgent, startAgent } from './control.js';
@@ -27,6 +28,7 @@ import {
   getRun,
   cancelRun,
 } from './workflows.js';
+import { getAllProjects } from './projects.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3100');
@@ -156,6 +158,40 @@ app.post('/api/agents/:pid/stop', async (req, res) => {
   res.json(result);
 });
 
+// ─── Directory browsing ─────────────────────────────────
+
+app.get('/api/directories', (req, res) => {
+  const { path: dirPath } = req.query;
+  if (!dirPath || typeof dirPath !== 'string') {
+    res.status(400).json({ error: 'path query parameter is required' });
+    return;
+  }
+
+  let parentDir: string;
+  let prefix: string;
+
+  if (dirPath.endsWith('/')) {
+    parentDir = dirPath;
+    prefix = '';
+  } else {
+    parentDir = path.dirname(dirPath);
+    prefix = path.basename(dirPath).toLowerCase();
+  }
+
+  try {
+    const entries = fs.readdirSync(parentDir, { withFileTypes: true });
+    const dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .filter(e => !prefix || e.name.toLowerCase().startsWith(prefix))
+      .map(e => path.join(parentDir, e.name))
+      .sort()
+      .slice(0, 20);
+    res.json({ directories: dirs });
+  } catch {
+    res.json({ directories: [] });
+  }
+});
+
 // ─── Logs ───────────────────────────────────────────────
 
 app.get('/api/agents/:pid/logs', (req, res) => {
@@ -176,6 +212,13 @@ app.get('/api/sessions', (req, res) => {
   }
   const sessions = getProjectSessions(cwd);
   res.json({ sessions });
+});
+
+// ─── Projects browser ────────────────────────────────────
+
+app.get('/api/projects', (_req, res) => {
+  const projects = getAllProjects();
+  res.json({ projects });
 });
 
 // ─── History ────────────────────────────────────────────

@@ -3,14 +3,16 @@ import { useAgents } from './hooks/useAgents';
 import { Dashboard } from './components/Dashboard';
 import { HistoryView } from './components/HistoryView';
 import { WorkflowView } from './components/WorkflowView';
+import { ProjectsView } from './components/ProjectsView';
 import { Notifications } from './components/Notifications';
 
-type Tab = 'monitor' | 'workflows' | 'history';
+type Tab = 'monitor' | 'workflows' | 'history' | 'projects';
 
 const tabs: { id: Tab; label: string; shortcut: string }[] = [
   { id: 'monitor', label: 'Monitor', shortcut: '1' },
   { id: 'workflows', label: 'Workflows', shortcut: '2' },
   { id: 'history', label: 'History', shortcut: '3' },
+  { id: 'projects', label: 'Projects', shortcut: '4' },
 ];
 
 function timeAgo(timestamp: number): string {
@@ -42,6 +44,7 @@ export default function App() {
       if (e.key === '1') setActiveTab('monitor');
       else if (e.key === '2') setActiveTab('workflows');
       else if (e.key === '3') setActiveTab('history');
+      else if (e.key === '4') setActiveTab('projects');
     };
     window.addEventListener('keydown', handleKeydown);
     return () => window.removeEventListener('keydown', handleKeydown);
@@ -147,6 +150,7 @@ export default function App() {
         )}
         {activeTab === 'workflows' && <WorkflowView />}
         {activeTab === 'history' && <HistoryView history={history} />}
+        {activeTab === 'projects' && <ProjectsView />}
       </main>
 
       {/* Notifications */}

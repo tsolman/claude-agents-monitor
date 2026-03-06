@@ -6,6 +6,7 @@ import type {
   LogEntry,
   Workflow,
   WorkflowRun,
+  ProjectInfo,
 } from '../types';
 
 export function useAgents() {
@@ -148,4 +149,8 @@ export async function getWorkflowRuns(): Promise<{ runs: WorkflowRun[] }> {
 
 export async function cancelWorkflowRun(id: string): Promise<void> {
   await apiFetch(`/runs/${id}/cancel`, { method: 'POST' });
+}
+
+export async function getProjects(): Promise<{ projects: ProjectInfo[] }> {
+  return apiFetch('/projects');
 }

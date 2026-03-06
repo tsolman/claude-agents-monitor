@@ -1,8 +1,36 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { startAgent } from '../hooks/useAgents';
 
 interface LaunchModalProps {
   onClose: () => void;
+}
+
+function useDirSuggestions(input: string) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    clearTimeout(timerRef.current);
+
+    if (!input.startsWith('/')) {
+      setSuggestions([]);
+      return;
+    }
+
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/directories?path=${encodeURIComponent(input)}`);
+        const data = await res.json();
+        setSuggestions(data.directories || []);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 150);
+
+    return () => clearTimeout(timerRef.current);
+  }, [input]);
+
+  return suggestions;
 }
 
 export function LaunchModal({ onClose }: LaunchModalProps) {
@@ -10,16 +38,64 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
   const [cwd, setCwd] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState(-1);
   const cwdRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = useDirSuggestions(cwd);
 
   useEffect(() => {
     cwdRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
+
+  useEffect(() => {
+    setSelectedIdx(-1);
+  }, [suggestions]);
+
+  const pickSuggestion = useCallback((dir: string) => {
+    setCwd(dir + '/');
+    setShowSuggestions(false);
+    cwdRef.current?.focus();
+  }, []);
+
+  const handleCwdKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || suggestions.length === 0) {
+      if (e.key === 'Tab' && cwd.startsWith('/')) {
+        e.preventDefault();
+        setShowSuggestions(true);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIdx(i => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Tab' || e.key === 'Enter') {
+      if (selectedIdx >= 0 && selectedIdx < suggestions.length) {
+        e.preventDefault();
+        pickSuggestion(suggestions[selectedIdx]);
+      } else if (suggestions.length === 1) {
+        e.preventDefault();
+        pickSuggestion(suggestions[0]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      setShowSuggestions(false);
+    }
+  };
 
   const handleLaunch = async () => {
     if (!prompt.trim() || !cwd.trim()) {
@@ -71,8 +147,13 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
         {/* Body */}
         <div className="space-y-5 px-6 py-5">
           <div>
-            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-white/25">
-              Working Directory
+            <label className="mb-1.5 flex items-baseline justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-white/25">
+                Working Directory
+              </span>
+              <span className="font-mono text-[9px] text-white/10">
+                tab to autocomplete
+              </span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] text-accent/40 pointer-events-none select-none">$</span>
@@ -80,10 +161,47 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
                 ref={cwdRef}
                 type="text"
                 value={cwd}
-                onChange={e => setCwd(e.target.value)}
+                onChange={e => {
+                  setCwd(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => {
+                  // Delay so click on suggestion registers
+                  setTimeout(() => setShowSuggestions(false), 150);
+                }}
+                onKeyDown={handleCwdKeyDown}
                 placeholder="/path/to/project"
                 className="input-field font-mono pl-7"
+                autoComplete="off"
               />
+              {/* Suggestions dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div
+                  ref={suggestionsRef}
+                  className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg bg-surface-2 py-1 ring-1 ring-border"
+                >
+                  {suggestions.map((dir, i) => (
+                    <button
+                      key={dir}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        pickSuggestion(dir);
+                      }}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-[11px] transition-colors ${
+                        i === selectedIdx
+                          ? 'bg-accent-dim text-accent'
+                          : 'text-white/40 hover:bg-surface-3 hover:text-white/60'
+                      }`}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0 opacity-40">
+                        <path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5a.25.25 0 01-.2-.1l-.9-1.2c-.33-.44-.85-.7-1.4-.7z" />
+                      </svg>
+                      {dir}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
