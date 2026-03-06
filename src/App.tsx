@@ -8,6 +8,30 @@ import { Notifications } from './components/Notifications';
 
 type Tab = 'monitor' | 'workflows' | 'history' | 'projects';
 
+const tabIcons: Record<Tab, JSX.Element> = {
+  monitor: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M1 8h3l2-5 2 10 2-5h3" />
+    </svg>
+  ),
+  workflows: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+      <circle cx="3" cy="4" r="1.5" /><circle cx="8" cy="4" r="1.5" /><circle cx="8" cy="12" r="1.5" /><circle cx="13" cy="8" r="1.5" />
+      <path d="M4.5 4h2M9.5 4l2 2.5L9.5 9v3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  history: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 2" />
+    </svg>
+  ),
+  projects: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor" opacity="0.9">
+      <rect x="1" y="1" width="6" height="6" rx="1.5" /><rect x="9" y="1" width="6" height="6" rx="1.5" /><rect x="1" y="9" width="6" height="6" rx="1.5" /><rect x="9" y="9" width="6" height="6" rx="1.5" />
+    </svg>
+  ),
+};
+
 const tabs: { id: Tab; label: string; shortcut: string }[] = [
   { id: 'monitor', label: 'Monitor', shortcut: '1' },
   { id: 'workflows', label: 'Workflows', shortcut: '2' },
@@ -60,14 +84,20 @@ export default function App() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
           {/* Logo */}
           <div className="flex items-center gap-3.5">
-            <div className="relative flex h-8 w-8 items-center justify-center overflow-visible">
-              {/* Pulsing ring */}
-              <span className="absolute inset-0 rounded-lg bg-accent/10 animate-ring-pulse" />
-              <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-accent-dim ring-1 ring-accent/20">
-                <span className="font-mono text-xs font-bold text-accent">
-                  CA
-                </span>
-              </div>
+            <div className="relative flex h-9 w-9 items-center justify-center overflow-visible">
+              <span className="absolute inset-0 rounded-xl bg-accent/8 animate-ring-pulse" />
+              <svg className="relative w-9 h-9" viewBox="0 0 36 36" fill="none">
+                <rect x="1" y="1" width="34" height="34" rx="9" fill="#0c1017" stroke="#1a1f2b" strokeWidth="1" />
+                <circle cx="18" cy="18" r="10.5" stroke="#e8a23e" strokeWidth="0.75" fill="none" opacity="0.12" />
+                <path d="M18 7.5 A10.5 10.5 0 0 1 28.5 18" stroke="#58a6ff" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+                <path d="M28.5 18 A10.5 10.5 0 0 1 18 28.5" stroke="#bc8cff" strokeWidth="1.8" fill="none" strokeLinecap="round" opacity="0.7" />
+                <path d="M18 28.5 A10.5 10.5 0 0 1 7.5 18" stroke="#56d4dd" strokeWidth="1.8" fill="none" strokeLinecap="round" opacity="0.5" />
+                <circle cx="18" cy="18" r="3" fill="#e8a23e" opacity="0.15" />
+                <circle cx="18" cy="18" r="2" fill="#e8a23e" />
+                <circle cx="18" cy="7.5" r="1.8" fill="#58a6ff" />
+                <circle cx="28.5" cy="18" r="1.8" fill="#bc8cff" />
+                <circle cx="18" cy="28.5" r="1.8" fill="#56d4dd" />
+              </svg>
             </div>
             <div>
               <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-white/90">
@@ -124,6 +154,7 @@ export default function App() {
                   : 'text-white/30 hover:text-white/60'
               }`}
             >
+              {tabIcons[tab.id]}
               {tab.label}
               <kbd
                 className={`rounded px-1 py-0.5 font-mono text-[9px] ${
