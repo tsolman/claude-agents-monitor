@@ -1,0 +1,151 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type {
+  MonitorState,
+  HistoryEntry,
+  AgentEvent,
+  LogEntry,
+  Workflow,
+  WorkflowRun,
+} from '../types';
+
+export function useAgents() {
+  const [state, setState] = useState<MonitorState | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [notifications, setNotifications] = useState<AgentEvent[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const connect = useCallback(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${window.location.host}/ws`;
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onopen = () => setConnected(true);
+
+    ws.onclose = () => {
+      setConnected(false);
+      reconnectTimer.current = setTimeout(connect, 3000);
+    };
+
+    ws.onmessage = event => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Initial message includes full history
+        if (data.history) {
+          setHistory(data.history);
+        }
+
+        setState(data);
+
+        // Accumulate history
+        if (!data.history) {
+          setHistory(prev => {
+            const entry: HistoryEntry = {
+              timestamp: data.timestamp,
+              totalCount: data.totalCount,
+              totalCpu: data.totalCpu,
+              totalMemory: data.totalMemory,
+            };
+            const updated = [...prev, entry];
+            const cutoff = Date.now() - 30 * 60 * 1000;
+            return updated.filter(e => e.timestamp >= cutoff);
+          });
+        }
+
+        // Accumulate notifications (keep last 20)
+        if (data.events && data.events.length > 0) {
+          setNotifications(prev => [...prev, ...data.events].slice(-20));
+        }
+      } catch {
+        // ignore malformed messages
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
+  const dismissNotification = useCallback((index: number) => {
+    setNotifications(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  return { state, connected, history, notifications, dismissNotification };
+}
+
+// ─── API helpers ────────────────────────────────────────
+
+const apiBase = '/api';
+
+async function apiFetch<T>(
+  url: string,
+  options?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${apiBase}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  return res.json();
+}
+
+export async function stopAgent(
+  pid: number,
+  force?: boolean
+): Promise<{ success: boolean; error?: string }> {
+  const query = force ? '?force=true' : '';
+  return apiFetch(`/agents/${pid}/stop${query}`, { method: 'POST' });
+}
+
+export async function startAgent(
+  prompt: string,
+  cwd: string
+): Promise<{ success: boolean; pid?: number; error?: string }> {
+  return apiFetch('/agents/start', {
+    method: 'POST',
+    body: JSON.stringify({ prompt, cwd }),
+  });
+}
+
+export async function getAgentLogs(
+  pid: number,
+  cwd: string
+): Promise<{ logs: LogEntry[] }> {
+  return apiFetch(`/agents/${pid}/logs?cwd=${encodeURIComponent(cwd)}`);
+}
+
+export async function getWorkflows(): Promise<{ workflows: Workflow[] }> {
+  return apiFetch('/workflows');
+}
+
+export async function createWorkflow(
+  data: Omit<Workflow, 'id' | 'createdAt'>
+): Promise<Workflow> {
+  return apiFetch('/workflows', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  await apiFetch(`/workflows/${id}`, { method: 'DELETE' });
+}
+
+export async function runWorkflow(id: string): Promise<WorkflowRun> {
+  return apiFetch(`/workflows/${id}/run`, { method: 'POST' });
+}
+
+export async function getWorkflowRuns(): Promise<{ runs: WorkflowRun[] }> {
+  return apiFetch('/runs');
+}
+
+export async function cancelWorkflowRun(id: string): Promise<void> {
+  await apiFetch(`/runs/${id}/cancel`, { method: 'POST' });
+}
