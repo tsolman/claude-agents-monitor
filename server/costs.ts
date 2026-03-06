@@ -103,6 +103,29 @@ function parseSessionCost(filePath: string): CostInfo {
   };
 }
 
+export function getSessionCost(sessionFilePath: string): CostInfo | null {
+  if (!fs.existsSync(sessionFilePath)) return null;
+
+  try {
+    const stat = fs.statSync(sessionFilePath);
+    const mtime = stat.mtime.getTime();
+
+    // Check cache
+    const cached = costCache.get(sessionFilePath);
+    if (cached && cached.mtime === mtime) {
+      return cached.cost;
+    }
+
+    const cost = parseSessionCost(sessionFilePath);
+    if (cost.inputTokens === 0 && cost.outputTokens === 0) return null;
+
+    costCache.set(sessionFilePath, { mtime, cost });
+    return cost;
+  } catch {
+    return null;
+  }
+}
+
 export function getAgentCost(cwd: string): CostInfo | null {
   const projectPath = cwdToProjectPath(cwd);
   const projectDir = path.join(CLAUDE_DIR, 'projects', projectPath);

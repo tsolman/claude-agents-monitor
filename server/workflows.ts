@@ -1,5 +1,8 @@
 import { spawn, ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 export interface WorkflowStep {
   id: string;
@@ -35,7 +38,33 @@ export interface WorkflowRun {
   stepStatuses: Record<string, StepStatus>;
 }
 
-const workflows = new Map<string, Workflow>();
+const WORKFLOWS_DIR = path.join(os.homedir(), '.claude', 'claude-agents-monitor');
+const WORKFLOWS_FILE = path.join(WORKFLOWS_DIR, 'workflows.json');
+
+function loadWorkflows(): Map<string, Workflow> {
+  try {
+    const data = fs.readFileSync(WORKFLOWS_FILE, 'utf-8');
+    return new Map(JSON.parse(data));
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+      // First run — no file yet, start empty
+    } else {
+      console.warn('Warning: Failed to load workflows from disk, starting with empty state:', err);
+    }
+    return new Map();
+  }
+}
+
+function saveWorkflows(): void {
+  try {
+    fs.mkdirSync(WORKFLOWS_DIR, { recursive: true });
+    fs.writeFileSync(WORKFLOWS_FILE, JSON.stringify(Array.from(workflows.entries()), null, 2));
+  } catch (err) {
+    console.warn('Warning: Failed to save workflows to disk:', err);
+  }
+}
+
+const workflows = loadWorkflows();
 const runs = new Map<string, WorkflowRun>();
 const runProcesses = new Map<string, Map<string, ChildProcess>>();
 
@@ -48,6 +77,7 @@ export function createWorkflow(
     createdAt: Date.now(),
   };
   workflows.set(workflow.id, workflow);
+  saveWorkflows();
   return workflow;
 }
 
@@ -62,7 +92,9 @@ export function getWorkflow(id: string): Workflow | undefined {
 }
 
 export function deleteWorkflow(id: string): boolean {
-  return workflows.delete(id);
+  const result = workflows.delete(id);
+  if (result) saveWorkflows();
+  return result;
 }
 
 export function startWorkflowRun(workflowId: string): WorkflowRun | null {
@@ -113,6 +145,7 @@ async function executeWorkflow(
       if (!hasPending && !hasRunning) {
         run.status = 'completed';
         run.completedAt = Date.now();
+        saveWorkflows();
       }
       break;
     }
@@ -134,6 +167,7 @@ async function executeWorkflow(
             run.stepStatuses[s.id].status = 'skipped';
           }
         }
+        saveWorkflows();
         return;
       }
     }

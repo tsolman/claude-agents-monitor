@@ -8,6 +8,7 @@ import {
   getWorkflowRuns,
   cancelWorkflowRun,
 } from '../hooks/useAgents';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export function WorkflowView() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -142,6 +143,8 @@ function WorkflowCard({
   onRun: () => void;
   onDelete: () => void;
 }) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   return (
     <div className="card card-glow p-5">
       <div className="flex items-start justify-between gap-4">
@@ -177,13 +180,25 @@ function WorkflowCard({
             RUN
           </button>
           <button
-            onClick={onDelete}
+            onClick={() => setShowDeleteConfirm(true)}
             className="rounded-lg px-3 py-1.5 font-mono text-[11px] font-medium text-white/15 transition-all hover:bg-danger-dim hover:text-danger"
           >
             DEL
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Workflow"
+        message={`Delete '${workflow.name}'? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          setShowDeleteConfirm(false);
+          onDelete();
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }
@@ -195,6 +210,8 @@ function RunCard({
   run: WorkflowRun;
   onCancel: () => void;
 }) {
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
   const statusConfig: Record<string, { color: string; bg: string }> = {
     running: { color: '#58a6ff', bg: 'rgba(88, 166, 255, 0.1)' },
     completed: { color: '#3fb950', bg: 'rgba(63, 185, 80, 0.1)' },
@@ -225,7 +242,7 @@ function RunCard({
         </div>
         {run.status === 'running' && (
           <button
-            onClick={onCancel}
+            onClick={() => setShowCancelConfirm(true)}
             className="rounded-lg px-3 py-1 font-mono text-[10px] font-medium text-white/20 transition-all hover:bg-danger-dim hover:text-danger"
           >
             CANCEL
@@ -283,6 +300,18 @@ function RunCard({
           );
         })}
       </div>
+      <ConfirmDialog
+        open={showCancelConfirm}
+        title="Cancel Run"
+        message={`Cancel the running workflow '${run.workflowName}'?`}
+        confirmLabel="Cancel Run"
+        confirmVariant="warning"
+        onConfirm={() => {
+          setShowCancelConfirm(false);
+          onCancel();
+        }}
+        onCancel={() => setShowCancelConfirm(false)}
+      />
     </div>
   );
 }

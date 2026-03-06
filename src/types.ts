@@ -97,6 +97,7 @@ export interface SessionEntry {
   gitBranch: string;
   projectPath: string;
   isSidechain: boolean;
+  cost: number;
 }
 
 export interface ProjectInfo {
@@ -110,4 +111,5 @@ export interface ProjectInfo {
   sessions: SessionEntry[];
   hasMemory: boolean;
   diskSize: number;
+  totalCost: number;
 }

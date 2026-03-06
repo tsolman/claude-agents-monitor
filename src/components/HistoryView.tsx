@@ -1,33 +1,74 @@
+import { useState, useMemo } from 'react';
 import type { HistoryEntry } from '../types';
 import { Sparkline } from './Sparkline';
+
+const RANGE_OPTIONS = [
+  { label: '5m', minutes: 5 },
+  { label: '15m', minutes: 15 },
+  { label: '30m', minutes: 30 },
+  { label: '1h', minutes: 60 },
+  { label: '2h', minutes: 120 },
+] as const;
 
 interface HistoryViewProps {
   history: HistoryEntry[];
 }
 
 export function HistoryView({ history }: HistoryViewProps) {
-  if (history.length < 5) {
+  const [range, setRange] = useState(30);
+
+  const filteredHistory = useMemo(() => {
+    const cutoff = Date.now() - range * 60 * 1000;
+    return history.filter(h => h.timestamp >= cutoff);
+  }, [history, range]);
+
+  const rangeLabel = RANGE_OPTIONS.find(o => o.minutes === range)!.label;
+
+  if (filteredHistory.length < 5) {
     return (
-      <div className="card flex flex-col items-center justify-center py-24 text-center">
-        <div className="relative mb-6 h-8 w-8">
-          <div className="absolute inset-0 animate-spin rounded-full border-2 border-white/5 border-t-data-blue/40" />
+      <div className="space-y-8 animate-fade-in">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[13px] font-medium uppercase tracking-widest text-white/30">
+            Resource History
+            <span className="text-white/25">{' '}&mdash; Last {rangeLabel}</span>
+          </h2>
+          <div className="flex gap-2">
+            {RANGE_OPTIONS.map(opt => (
+              <button
+                key={opt.minutes}
+                onClick={() => setRange(opt.minutes)}
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-mono font-medium transition-colors cursor-pointer ${
+                  range === opt.minutes
+                    ? 'bg-accent-dim text-accent ring-1 ring-accent/30'
+                    : 'bg-surface-2 text-white/25 hover:text-white/40'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <h2 className="mb-2 text-sm font-medium text-white/40">
-          Collecting data...
-        </h2>
-        <p className="font-mono text-[11px] text-white/20">
-          History will appear after a few seconds of monitoring.
-        </p>
+        <div className="card flex flex-col items-center justify-center py-24 text-center">
+          <div className="relative mb-6 h-8 w-8">
+            <div className="absolute inset-0 animate-spin rounded-full border-2 border-white/5 border-t-data-blue/40" />
+          </div>
+          <h2 className="mb-2 text-sm font-medium text-white/40">
+            Collecting data...
+          </h2>
+          <p className="font-mono text-[11px] text-white/20">
+            History will appear after a few seconds of monitoring.
+          </p>
+        </div>
       </div>
     );
   }
 
-  const agentCounts = history.map(h => h.totalCount);
-  const cpuValues = history.map(h => h.totalCpu);
-  const memValues = history.map(h => h.totalMemory);
+  const agentCounts = filteredHistory.map(h => h.totalCount);
+  const cpuValues = filteredHistory.map(h => h.totalCpu);
+  const memValues = filteredHistory.map(h => h.totalMemory);
 
-  const latest = history[history.length - 1];
-  const oldest = history[0];
+  const latest = filteredHistory[filteredHistory.length - 1];
+  const oldest = filteredHistory[0];
   const durationMin = Math.round(
     (latest.timestamp - oldest.timestamp) / 60000
   );
@@ -35,13 +76,26 @@ export function HistoryView({ history }: HistoryViewProps) {
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header */}
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-center justify-between">
         <h2 className="text-[13px] font-medium uppercase tracking-widest text-white/30">
           Resource History
+          <span className="text-white/25">{' '}&mdash; Last {rangeLabel}</span>
         </h2>
-        <span className="font-mono text-[10px] text-white/15">
-          {durationMin}m window &middot; {history.length} samples
-        </span>
+        <div className="flex gap-2">
+          {RANGE_OPTIONS.map(opt => (
+            <button
+              key={opt.minutes}
+              onClick={() => setRange(opt.minutes)}
+              className={`rounded-lg px-3 py-1.5 text-[12px] font-mono font-medium transition-colors cursor-pointer ${
+                range === opt.minutes
+                  ? 'bg-accent-dim text-accent ring-1 ring-accent/30'
+                  : 'bg-surface-2 text-white/25 hover:text-white/40'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Large charts */}

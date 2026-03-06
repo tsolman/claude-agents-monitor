@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ClaudeAgent, LogEntry } from '../types';
 import { stopAgent, getAgentLogs } from '../hooks/useAgents';
+import { ConfirmDialog } from './ConfirmDialog';
 
 function formatCommand(command: string): string {
   return command
@@ -52,23 +53,28 @@ export function AgentCard({
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<null | 'stop' | 'kill'>(null);
 
   const project = extractProject(agent.workingDirectory, agent.command);
   const isSubagent = agent.type === 'subagent';
   const isApiAgent = agent.command.startsWith('[API]');
 
-  const handleStop = async () => {
-    if (!forceMode) {
-      // First click: send normal stop, switch to force mode
+  const handleStopClick = () => {
+    setConfirmAction(forceMode ? 'kill' : 'stop');
+  };
+
+  const handleConfirm = async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (action === 'stop') {
       setStopping(true);
       await stopAgent(agent.pid);
       setStopping(false);
       setForceMode(true);
-      return;
+    } else if (action === 'kill') {
+      setStopping(true);
+      await stopAgent(agent.pid, true);
     }
-    // Second click: force kill
-    setStopping(true);
-    await stopAgent(agent.pid, true);
   };
 
   const handleToggleLogs = async () => {
@@ -222,7 +228,7 @@ export function AgentCard({
                 )}
                 {agent.pid > 0 && (
                   <button
-                    onClick={handleStop}
+                    onClick={handleStopClick}
                     disabled={stopping}
                     className={`rounded-md px-2.5 py-1 font-mono text-[10px] font-medium transition-all disabled:opacity-30 ${
                       forceMode
@@ -304,6 +310,25 @@ export function AgentCard({
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmAction === 'stop'}
+        title="Stop Agent"
+        message={`This will gracefully terminate agent PID ${agent.pid}${project ? ` working on ${project}` : ''}. Continue?`}
+        confirmLabel="Stop"
+        confirmVariant="warning"
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'kill'}
+        title="Force Kill Agent"
+        message={`This will forcefully terminate agent PID ${agent.pid}. Unsaved work may be lost. Continue?`}
+        confirmLabel="Force Kill"
+        confirmVariant="danger"
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

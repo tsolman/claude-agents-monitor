@@ -36,6 +36,12 @@ function truncate(str: string, len: number): string {
   return str.slice(0, len) + '...';
 }
 
+function formatCost(cost: number): string {
+  if (cost === 0) return '$0.00';
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
+}
+
 type SortKey = 'recent' | 'sessions' | 'messages' | 'name' | 'size';
 
 export function ProjectsView() {
@@ -97,6 +103,7 @@ export function ProjectsView() {
 
   const totalSessions = projects.reduce((sum, p) => sum + p.totalSessions, 0);
   const totalMessages = projects.reduce((sum, p) => sum + p.totalMessages, 0);
+  const totalCost = projects.reduce((sum, p) => sum + p.totalCost, 0);
 
   if (loading) {
     return (
@@ -109,7 +116,7 @@ export function ProjectsView() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="card p-4">
           <div className="text-[11px] font-mono uppercase tracking-wider text-white/30 mb-1">Projects</div>
           <div className="metric-value text-2xl text-data-blue">{projects.length}</div>
@@ -121,6 +128,10 @@ export function ProjectsView() {
         <div className="card p-4">
           <div className="text-[11px] font-mono uppercase tracking-wider text-white/30 mb-1">Total Messages</div>
           <div className="metric-value text-2xl text-data-cyan">{totalMessages.toLocaleString()}</div>
+        </div>
+        <div className="card p-4">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-white/30 mb-1">Total Cost</div>
+          <div className="metric-value text-2xl text-accent">{formatCost(totalCost)}</div>
         </div>
       </div>
 
@@ -264,6 +275,10 @@ function ProjectCard({ project, expanded, onToggle }: { project: ProjectInfo; ex
             <span className="metric-value text-data-cyan">{project.totalMessages.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-1.5">
+            <span className="text-white/25">Cost</span>
+            <span className="metric-value text-accent">{formatCost(project.totalCost)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <span className="text-white/25">Size</span>
             <span className="metric-value text-white/50">{formatBytes(project.diskSize)}</span>
           </div>
@@ -325,6 +340,9 @@ function ProjectRow({ project, expanded, onToggle }: { project: ProjectInfo; exp
             <span className="text-white/20 ml-1">msg</span>
           </div>
           <div className="text-right w-16">
+            <span className="metric-value text-accent">{formatCost(project.totalCost)}</span>
+          </div>
+          <div className="text-right w-16">
             <span className="text-white/30">{formatBytes(project.diskSize)}</span>
           </div>
           <div className="text-right w-16 text-white/25">
@@ -370,6 +388,7 @@ function SessionList({ sessions }: { sessions: SessionEntry[] }) {
         <div className="flex gap-4 text-[10px] font-mono text-white/20 uppercase tracking-wider">
           <span className="w-32">Prompt</span>
           <span className="w-14 text-right">Messages</span>
+          <span className="w-14 text-right">Cost</span>
           <span className="w-20 text-right">Branch</span>
           <span className="w-28 text-right">Created</span>
           <span className="w-20 text-right">Last Active</span>
@@ -413,6 +432,9 @@ function SessionRow({ session }: { session: SessionEntry }) {
       <div className="flex items-center gap-4 text-[11px] shrink-0">
         <span className="metric-value text-white/40 w-14 text-right">
           {session.messageCount > 0 ? session.messageCount : '-'}
+        </span>
+        <span className="metric-value text-accent/60 w-14 text-right">
+          {session.cost > 0 ? formatCost(session.cost) : '-'}
         </span>
         <span className="w-20 text-right">
           {session.gitBranch ? (

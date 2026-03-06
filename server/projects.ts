@@ -1,6 +1,7 @@
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { getSessionCost } from './costs';
 
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
@@ -13,6 +14,7 @@ export interface SessionEntry {
   gitBranch: string;
   projectPath: string;
   isSidechain: boolean;
+  cost: number;
 }
 
 export interface ProjectInfo {
@@ -26,6 +28,7 @@ export interface ProjectInfo {
   sessions: SessionEntry[];
   hasMemory: boolean;
   diskSize: number;
+  totalCost: number;
 }
 
 function decodeDirName(dirName: string): string {
@@ -54,6 +57,12 @@ function getDirSize(dirPath: string): number {
   return size;
 }
 
+function computeSessionCost(projectDir: string, sessionId: string): number {
+  const jsonlPath = path.join(projectDir, `${sessionId}.jsonl`);
+  const costInfo = getSessionCost(jsonlPath);
+  return costInfo ? costInfo.totalCost : 0;
+}
+
 function readSessionsIndex(projectDir: string): SessionEntry[] | null {
   const indexPath = path.join(projectDir, 'sessions-index.json');
   if (!fs.existsSync(indexPath)) return null;
@@ -61,29 +70,37 @@ function readSessionsIndex(projectDir: string): SessionEntry[] | null {
   try {
     const data = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
     if (data && Array.isArray(data.entries)) {
-      return data.entries.map((e: Record<string, unknown>) => ({
-        sessionId: String(e.sessionId || ''),
-        firstPrompt: String(e.firstPrompt || 'No prompt'),
-        messageCount: Number(e.messageCount || 0),
-        created: String(e.created || ''),
-        modified: String(e.modified || ''),
-        gitBranch: String(e.gitBranch || ''),
-        projectPath: String(e.projectPath || ''),
-        isSidechain: Boolean(e.isSidechain),
-      }));
+      return data.entries.map((e: Record<string, unknown>) => {
+        const sessionId = String(e.sessionId || '');
+        return {
+          sessionId,
+          firstPrompt: String(e.firstPrompt || 'No prompt'),
+          messageCount: Number(e.messageCount || 0),
+          created: String(e.created || ''),
+          modified: String(e.modified || ''),
+          gitBranch: String(e.gitBranch || ''),
+          projectPath: String(e.projectPath || ''),
+          isSidechain: Boolean(e.isSidechain),
+          cost: computeSessionCost(projectDir, sessionId),
+        };
+      });
     }
     // Handle old format where entries is the root array
     if (Array.isArray(data)) {
-      return data.map((e: Record<string, unknown>) => ({
-        sessionId: String(e.sessionId || ''),
-        firstPrompt: String(e.firstPrompt || 'No prompt'),
-        messageCount: Number(e.messageCount || 0),
-        created: String(e.created || e.startTime || ''),
-        modified: String(e.modified || e.lastActivity || ''),
-        gitBranch: String(e.gitBranch || ''),
-        projectPath: String(e.projectPath || ''),
-        isSidechain: Boolean(e.isSidechain),
-      }));
+      return data.map((e: Record<string, unknown>) => {
+        const sessionId = String(e.sessionId || '');
+        return {
+          sessionId,
+          firstPrompt: String(e.firstPrompt || 'No prompt'),
+          messageCount: Number(e.messageCount || 0),
+          created: String(e.created || e.startTime || ''),
+          modified: String(e.modified || e.lastActivity || ''),
+          gitBranch: String(e.gitBranch || ''),
+          projectPath: String(e.projectPath || ''),
+          isSidechain: Boolean(e.isSidechain),
+          cost: computeSessionCost(projectDir, sessionId),
+        };
+      });
     }
   } catch {
     // fall through
@@ -99,8 +116,10 @@ function scanSessionFiles(projectDir: string): SessionEntry[] {
       .map(f => {
         const filePath = path.join(projectDir, f);
         const stat = fs.statSync(filePath);
+        const sessionId = f.replace('.jsonl', '');
+        const costInfo = getSessionCost(filePath);
         return {
-          sessionId: f.replace('.jsonl', ''),
+          sessionId,
           firstPrompt: 'No prompt',
           messageCount: 0,
           created: stat.birthtime.toISOString(),
@@ -108,6 +127,7 @@ function scanSessionFiles(projectDir: string): SessionEntry[] {
           gitBranch: '',
           projectPath: '',
           isSidechain: false,
+          cost: costInfo ? costInfo.totalCost : 0,
         };
       })
       .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
@@ -141,6 +161,7 @@ export function getAllProjects(): ProjectInfo[] {
 
     // Compute aggregates
     const totalMessages = sessions.reduce((sum, s) => sum + s.messageCount, 0);
+    const totalCost = sessions.reduce((sum, s) => sum + s.cost, 0);
     const branches = [...new Set(sessions.map(s => s.gitBranch).filter(Boolean))];
     const lastActivity = sessions.length > 0 ? sessions[0].modified : '';
     const hasMemory = fs.existsSync(path.join(projectDir, 'memory'));
@@ -157,6 +178,7 @@ export function getAllProjects(): ProjectInfo[] {
       sessions,
       hasMemory,
       diskSize,
+      totalCost: Math.round(totalCost * 10000) / 10000,
     });
   }
 
