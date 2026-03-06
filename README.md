@@ -50,7 +50,7 @@ Built for developers running agent swarms who need visibility and control across
 ## Quick Start
 
 ```bash
-git clone https://github.com/ktsolakidis/claude-agents-monitor.git
+git clone https://github.com/tsolman/claude-agents-monitor.git
 cd claude-agents-monitor
 npm install
 npm run dev
