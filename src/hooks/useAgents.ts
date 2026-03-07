@@ -154,3 +154,56 @@ export async function cancelWorkflowRun(id: string): Promise<void> {
 export async function getProjects(): Promise<{ projects: ProjectInfo[] }> {
   return apiFetch('/projects');
 }
+
+export async function getFullAgentLogs(
+  pid: number,
+  cwd: string,
+  search?: string
+): Promise<{ logs: LogEntry[] }> {
+  const params = new URLSearchParams({ cwd });
+  if (search) params.set('search', search);
+  return apiFetch(`/agents/${pid}/full-logs?${params.toString()}`);
+}
+
+export interface ReplayMessage {
+  type: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  model?: string;
+  tokens?: { input: number; output: number };
+}
+
+export async function getSessionReplay(
+  projectId: string,
+  sessionId: string
+): Promise<{ messages: ReplayMessage[] }> {
+  return apiFetch(
+    `/sessions/${encodeURIComponent(projectId)}/${encodeURIComponent(sessionId)}/replay`
+  );
+}
+
+export async function exportWorkflowJson(id: string): Promise<void> {
+  const res = await fetch(`${apiBase}/workflows/${id}/export`);
+  if (!res.ok) throw new Error('Export failed');
+  const data = await res.json();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${data.name || 'workflow'}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function importWorkflowJson(file: File): Promise<Workflow> {
+  const text = await file.text();
+  const data = JSON.parse(text);
+  return apiFetch('/workflows/import', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description || '',
+      steps: data.steps,
+    }),
+  });
+}

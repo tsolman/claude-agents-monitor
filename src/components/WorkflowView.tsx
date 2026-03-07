@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Workflow, WorkflowRun, WorkflowStep } from '../types';
 import {
   getWorkflows,
@@ -7,6 +7,8 @@ import {
   runWorkflow,
   getWorkflowRuns,
   cancelWorkflowRun,
+  exportWorkflowJson,
+  importWorkflowJson,
 } from '../hooks/useAgents';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -14,6 +16,7 @@ export function WorkflowView() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [showEditor, setShowEditor] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     const [wf, rn] = await Promise.all([getWorkflows(), getWorkflowRuns()]);
@@ -48,6 +51,15 @@ export function WorkflowView() {
     refresh();
   };
 
+  const handleImport = async (file: File) => {
+    try {
+      await importWorkflowJson(file);
+      refresh();
+    } catch {
+      alert('Import failed: invalid or corrupt workflow file.');
+    }
+  };
+
   return (
     <div className="space-y-10 animate-fade-in">
       {/* Workflows section */}
@@ -56,21 +68,40 @@ export function WorkflowView() {
           <h2 className="text-[13px] font-medium uppercase tracking-widest text-white/30">
             Workflows
           </h2>
-          <button
-            onClick={() => setShowEditor(!showEditor)}
-            className="group flex items-center gap-2 rounded-lg bg-accent-dim px-3.5 py-2 text-[12px] font-medium text-accent ring-1 ring-accent/15 transition-all hover:bg-accent-medium hover:ring-accent/25"
-          >
-            {showEditor ? (
-              'Cancel'
-            ) : (
-              <>
-                <span className="text-accent/60 transition-colors group-hover:text-accent">
-                  +
-                </span>
-                New Workflow
-              </>
-            )}
-          </button>
+          <div className="flex gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) handleImport(file);
+                e.target.value = '';
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-lg bg-surface-2 px-3.5 py-2 text-[12px] font-medium text-white/40 ring-1 ring-border transition-all hover:text-white/60 hover:ring-border-strong"
+            >
+              Import
+            </button>
+            <button
+              onClick={() => setShowEditor(!showEditor)}
+              className="group flex items-center gap-2 rounded-lg bg-accent-dim px-3.5 py-2 text-[12px] font-medium text-accent ring-1 ring-accent/15 transition-all hover:bg-accent-medium hover:ring-accent/25"
+            >
+              {showEditor ? (
+                'Cancel'
+              ) : (
+                <>
+                  <span className="text-accent/60 transition-colors group-hover:text-accent">
+                    +
+                  </span>
+                  New Workflow
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {showEditor && (
@@ -107,6 +138,7 @@ export function WorkflowView() {
                 workflow={wf}
                 onRun={() => handleRun(wf.id)}
                 onDelete={() => handleDelete(wf.id)}
+                onExport={() => exportWorkflowJson(wf.id)}
               />
             ))}
           </div>
@@ -138,10 +170,12 @@ function WorkflowCard({
   workflow,
   onRun,
   onDelete,
+  onExport,
 }: {
   workflow: Workflow;
   onRun: () => void;
   onDelete: () => void;
+  onExport: () => void;
 }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -178,6 +212,12 @@ function WorkflowCard({
             className="rounded-lg bg-live-dim px-3 py-1.5 font-mono text-[11px] font-medium text-live ring-1 ring-live/15 transition-all hover:bg-live/15"
           >
             RUN
+          </button>
+          <button
+            onClick={onExport}
+            className="rounded-lg px-3 py-1.5 font-mono text-[10px] font-medium text-white/20 transition-all hover:bg-surface-3 hover:text-white/40"
+          >
+            EXPORT
           </button>
           <button
             onClick={() => setShowDeleteConfirm(true)}

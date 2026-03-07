@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { ProjectInfo, SessionEntry } from '../types';
+import type { ProjectInfo, SessionEntry, ClaudeAgent } from '../types';
 import { getProjects } from '../hooks/useAgents';
+import { SessionReplay } from './SessionReplay';
+
+function projectHasRunningAgent(project: ProjectInfo, cwds: string[]): boolean {
+  return cwds.some(cwd => cwd.startsWith(project.path));
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -42,7 +47,7 @@ function formatCost(cost: number): string {
   return `$${cost.toFixed(2)}`;
 }
 
-type SortKey = 'recent' | 'sessions' | 'messages' | 'name' | 'size';
+type SortKey = 'recent' | 'sessions' | 'messages' | 'name' | 'size' | 'active';
 
 export function ProjectsView() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
@@ -51,9 +56,36 @@ export function ProjectsView() {
   const [sortBy, setSortBy] = useState<SortKey>('recent');
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [agentCwds, setAgentCwds] = useState<string[]>([]);
 
   useEffect(() => {
     loadProjects();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAgentCwds() {
+      try {
+        const res = await fetch('/api/agents');
+        const data = await res.json();
+        if (!cancelled) {
+          const cwds: string[] = [];
+          function collectCwds(agents: ClaudeAgent[]) {
+            for (const agent of agents) {
+              if (agent.workingDirectory) cwds.push(agent.workingDirectory);
+              if (agent.children) collectCwds(agent.children);
+            }
+          }
+          collectCwds(data.agents || []);
+          setAgentCwds(cwds);
+        }
+      } catch {
+        // silently fail
+      }
+    }
+    fetchAgentCwds();
+    const interval = setInterval(fetchAgentCwds, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
   async function loadProjects() {
@@ -97,9 +129,17 @@ export function ProjectsView() {
       case 'size':
         sorted.sort((a, b) => b.diskSize - a.diskSize);
         break;
+      case 'active':
+        sorted.sort((a, b) => {
+          const aActive = projectHasRunningAgent(a, agentCwds) ? 1 : 0;
+          const bActive = projectHasRunningAgent(b, agentCwds) ? 1 : 0;
+          if (bActive !== aActive) return bActive - aActive;
+          return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+        });
+        break;
     }
     return sorted;
-  }, [projects, search, sortBy]);
+  }, [projects, search, sortBy, agentCwds]);
 
   const totalSessions = projects.reduce((sum, p) => sum + p.totalSessions, 0);
   const totalMessages = projects.reduce((sum, p) => sum + p.totalMessages, 0);
@@ -157,6 +197,7 @@ export function ProjectsView() {
           className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-white/70 outline-none cursor-pointer hover:border-border-strong transition-colors"
         >
           <option value="recent">Most Recent</option>
+          <option value="active">Active First</option>
           <option value="sessions">Most Sessions</option>
           <option value="messages">Most Messages</option>
           <option value="name">Name A-Z</option>
@@ -217,6 +258,7 @@ export function ProjectsView() {
               project={project}
               expanded={expandedProject === project.id}
               onToggle={() => setExpandedProject(expandedProject === project.id ? null : project.id)}
+              isActive={projectHasRunningAgent(project, agentCwds)}
             />
           ))}
         </div>
@@ -228,6 +270,7 @@ export function ProjectsView() {
               project={project}
               expanded={expandedProject === project.id}
               onToggle={() => setExpandedProject(expandedProject === project.id ? null : project.id)}
+              isActive={projectHasRunningAgent(project, agentCwds)}
             />
           ))}
         </div>
@@ -236,7 +279,7 @@ export function ProjectsView() {
   );
 }
 
-function ProjectCard({ project, expanded, onToggle }: { project: ProjectInfo; expanded: boolean; onToggle: () => void }) {
+function ProjectCard({ project, expanded, onToggle, isActive }: { project: ProjectInfo; expanded: boolean; onToggle: () => void; isActive: boolean }) {
   return (
     <div className={`card card-glow overflow-hidden transition-all ${expanded ? 'ring-1 ring-accent/20' : ''}`}>
       <button onClick={onToggle} className="w-full text-left p-5">
@@ -253,6 +296,12 @@ function ProjectCard({ project, expanded, onToggle }: { project: ProjectInfo; ex
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isActive && (
+              <span className="flex items-center gap-1.5 rounded-full bg-live-dim px-2 py-0.5 text-[9px] font-mono text-live ring-1 ring-live/15">
+                <span className="w-1.5 h-1.5 rounded-full bg-live animate-glow-pulse" />
+                ACTIVE
+              </span>
+            )}
             {project.hasMemory && (
               <span className="rounded-full bg-accent-dim px-2 py-0.5 text-[10px] font-mono text-accent/70" title="Has project memory">
                 MEMORY
@@ -304,13 +353,13 @@ function ProjectCard({ project, expanded, onToggle }: { project: ProjectInfo; ex
 
       {/* Expanded session list */}
       {expanded && (
-        <SessionList sessions={project.sessions} />
+        <SessionList sessions={project.sessions} projectId={project.id} />
       )}
     </div>
   );
 }
 
-function ProjectRow({ project, expanded, onToggle }: { project: ProjectInfo; expanded: boolean; onToggle: () => void }) {
+function ProjectRow({ project, expanded, onToggle, isActive }: { project: ProjectInfo; expanded: boolean; onToggle: () => void; isActive: boolean }) {
   return (
     <div className={`card card-glow overflow-hidden transition-all ${expanded ? 'ring-1 ring-accent/20' : ''}`}>
       <button onClick={onToggle} className="w-full text-left px-5 py-3.5 flex items-center gap-4">
@@ -323,6 +372,9 @@ function ProjectRow({ project, expanded, onToggle }: { project: ProjectInfo; exp
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="text-[13px] font-semibold text-white/90 truncate">{project.name}</h3>
+            {isActive && (
+              <span className="rounded-full bg-live-dim px-1.5 py-0.5 text-[9px] font-mono text-live shrink-0">ACTIVE</span>
+            )}
             {project.hasMemory && (
               <span className="rounded-full bg-accent-dim px-1.5 py-0.5 text-[9px] font-mono text-accent/70 shrink-0">MEM</span>
             )}
@@ -369,14 +421,15 @@ function ProjectRow({ project, expanded, onToggle }: { project: ProjectInfo; exp
       </button>
 
       {expanded && (
-        <SessionList sessions={project.sessions} />
+        <SessionList sessions={project.sessions} projectId={project.id} />
       )}
     </div>
   );
 }
 
-function SessionList({ sessions }: { sessions: SessionEntry[] }) {
+function SessionList({ sessions, projectId }: { sessions: SessionEntry[]; projectId: string }) {
   const [showAll, setShowAll] = useState(false);
+  const [replaySession, setReplaySession] = useState<SessionEntry | null>(null);
   const displayed = showAll ? sessions : sessions.slice(0, 8);
 
   return (
@@ -397,7 +450,7 @@ function SessionList({ sessions }: { sessions: SessionEntry[] }) {
 
       <div className="divide-y divide-border-subtle/30">
         {displayed.map(session => (
-          <SessionRow key={session.sessionId} session={session} />
+          <SessionRow key={session.sessionId} session={session} onReplay={() => setReplaySession(session)} />
         ))}
       </div>
 
@@ -409,11 +462,20 @@ function SessionList({ sessions }: { sessions: SessionEntry[] }) {
           {showAll ? 'Show less' : `Show all ${sessions.length} sessions`}
         </button>
       )}
+
+      {replaySession && (
+        <SessionReplay
+          projectId={projectId}
+          sessionId={replaySession.sessionId}
+          sessionPrompt={replaySession.firstPrompt}
+          onClose={() => setReplaySession(null)}
+        />
+      )}
     </div>
   );
 }
 
-function SessionRow({ session }: { session: SessionEntry }) {
+function SessionRow({ session, onReplay }: { session: SessionEntry; onReplay: () => void }) {
   const prompt = session.firstPrompt === 'No prompt' ? '' : session.firstPrompt;
 
   return (
@@ -424,6 +486,12 @@ function SessionRow({ session }: { session: SessionEntry }) {
         ) : (
           <span className="w-1.5 h-1.5 rounded-full bg-live/40 shrink-0" />
         )}
+        <button
+          onClick={e => { e.stopPropagation(); onReplay(); }}
+          className="opacity-0 group-hover:opacity-100 text-[9px] font-mono text-data-blue/60 hover:text-data-blue px-1.5 py-0.5 rounded bg-data-blue-dim/0 hover:bg-data-blue-dim transition-all shrink-0"
+        >
+          REPLAY
+        </button>
         <span className="text-[12px] text-white/50 truncate max-w-md" title={prompt || 'No prompt'}>
           {prompt ? truncate(prompt, 80) : <span className="italic text-white/20">No prompt</span>}
         </span>

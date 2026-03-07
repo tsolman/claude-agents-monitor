@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import type { MonitorState, HistoryEntry } from '../types';
+import { useState, useEffect } from 'react';
+import type { MonitorState, HistoryEntry, ProjectInfo } from '../types';
 import { AgentCard } from './AgentCard';
 import { Sparkline } from './Sparkline';
 import { LaunchModal } from './LaunchModal';
+import { getProjects } from '../hooks/useAgents';
 
 interface DashboardProps {
   state: MonitorState | null;
@@ -10,8 +11,35 @@ interface DashboardProps {
   history: HistoryEntry[];
 }
 
+function findProjectForAgent(cwd: string | null, projects: ProjectInfo[]): ProjectInfo | null {
+  if (!cwd) return null;
+  let best: ProjectInfo | null = null;
+  for (const project of projects) {
+    if (cwd.startsWith(project.path) && (!best || project.path.length > best.path.length)) {
+      best = project;
+    }
+  }
+  return best;
+}
+
 export function Dashboard({ state, connected, history }: DashboardProps) {
   const [showLaunch, setShowLaunch] = useState(false);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const { projects: data } = await getProjects();
+        if (!cancelled) setProjects(data);
+      } catch {
+        // silently fail
+      }
+    }
+    load();
+    const interval = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   if (!state) {
     return (
@@ -105,6 +133,18 @@ export function Dashboard({ state, connected, history }: DashboardProps) {
           <span className="rounded-full bg-accent-dim px-2 py-0.5 font-mono text-[10px] font-semibold text-accent">
             {state.totalCount}
           </span>
+          {projects.length > 0 && state.agents.length > 0 && (() => {
+            const uniqueProjects = new Set(
+              state.agents
+                .map(a => findProjectForAgent(a.workingDirectory, projects)?.id)
+                .filter(Boolean)
+            );
+            return uniqueProjects.size > 0 ? (
+              <span className="text-[11px] text-white/20">
+                across {uniqueProjects.size} project{uniqueProjects.size !== 1 ? 's' : ''}
+              </span>
+            ) : null;
+          })()}
         </div>
         <button
           onClick={() => setShowLaunch(true)}

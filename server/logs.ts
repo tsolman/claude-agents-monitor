@@ -97,6 +97,61 @@ export function getSessionLogs(cwd: string, limit = 30): LogEntry[] {
   return entries;
 }
 
+export function getFullSessionLogs(
+  cwd: string,
+  options?: { search?: string; limit?: number }
+): LogEntry[] {
+  const limit = options?.limit ?? 200;
+  const search = options?.search?.toLowerCase();
+
+  const projectPath = cwdToProjectPath(cwd);
+  const projectDir = path.join(CLAUDE_DIR, 'projects', projectPath);
+
+  if (!fs.existsSync(projectDir)) return [];
+
+  const files = fs
+    .readdirSync(projectDir)
+    .filter(f => f.endsWith('.jsonl'))
+    .map(f => ({
+      name: f,
+      mtime: fs.statSync(path.join(projectDir, f)).mtime.getTime(),
+    }))
+    .sort((a, b) => b.mtime - a.mtime);
+
+  if (files.length === 0) return [];
+
+  const latestFile = path.join(projectDir, files[0].name);
+  const lines = readLastChunk(latestFile, 500000);
+
+  const entries: LogEntry[] = [];
+
+  for (let i = lines.length - 1; i >= 0 && entries.length < limit; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (parsed.type !== 'user' && parsed.type !== 'assistant') continue;
+      if (!parsed.message) continue;
+
+      const content = extractTextContent(parsed.message);
+      if (!content.trim()) continue;
+
+      const truncated = content.slice(0, 3000);
+
+      if (search && !truncated.toLowerCase().includes(search)) continue;
+
+      entries.unshift({
+        type: parsed.type,
+        content: truncated,
+        timestamp: parsed.timestamp,
+        sessionId: parsed.sessionId,
+      });
+    } catch {
+      // skip malformed lines
+    }
+  }
+
+  return entries;
+}
+
 export function getProjectSessions(cwd: string): SessionInfo[] {
   const projectPath = cwdToProjectPath(cwd);
   const projectDir = path.join(CLAUDE_DIR, 'projects', projectPath);

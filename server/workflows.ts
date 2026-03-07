@@ -97,6 +97,33 @@ export function deleteWorkflow(id: string): boolean {
   return result;
 }
 
+export function exportWorkflow(id: string): Workflow | null {
+  return workflows.get(id) || null;
+}
+
+export function importWorkflow(data: {
+  name: string;
+  description: string;
+  steps: Array<{ name: string; prompt: string; cwd: string; dependsOn: string[] }>;
+}): Workflow {
+  const workflow: Workflow = {
+    id: randomUUID(),
+    name: data.name,
+    description: data.description,
+    steps: data.steps.map(s => ({
+      id: randomUUID(),
+      name: s.name,
+      prompt: s.prompt,
+      cwd: s.cwd,
+      dependsOn: s.dependsOn,
+    })),
+    createdAt: Date.now(),
+  };
+  workflows.set(workflow.id, workflow);
+  saveWorkflows();
+  return workflow;
+}
+
 export function startWorkflowRun(workflowId: string): WorkflowRun | null {
   const workflow = workflows.get(workflowId);
   if (!workflow) return null;

@@ -3,12 +3,13 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { getMonitorState } from './monitor.js';
 import { stopAgent, startAgent } from './control.js';
 import { recordSnapshot, getHistory } from './history.js';
 import { trackLifecycle, getEvents } from './notifications.js';
-import { getSessionLogs, getProjectSessions } from './logs.js';
+import { getSessionLogs, getFullSessionLogs, getProjectSessions } from './logs.js';
 import { getAgentCost } from './costs.js';
 import {
   getRegisteredAgents,
@@ -27,6 +28,8 @@ import {
   getRuns,
   getRun,
   cancelRun,
+  exportWorkflow,
+  importWorkflow,
 } from './workflows.js';
 import { getAllProjects } from './projects.js';
 
@@ -204,6 +207,19 @@ app.get('/api/agents/:pid/logs', (req, res) => {
   res.json({ logs });
 });
 
+app.get('/api/agents/:pid/full-logs', (req, res) => {
+  const { cwd, search, limit } = req.query;
+  if (!cwd || typeof cwd !== 'string') {
+    res.status(400).json({ error: 'cwd query parameter is required' });
+    return;
+  }
+  const logs = getFullSessionLogs(cwd, {
+    search: typeof search === 'string' ? search : undefined,
+    limit: typeof limit === 'string' ? parseInt(limit) || 200 : undefined,
+  });
+  res.json({ logs });
+});
+
 app.get('/api/sessions', (req, res) => {
   const { cwd } = req.query;
   if (!cwd || typeof cwd !== 'string') {
@@ -219,6 +235,84 @@ app.get('/api/sessions', (req, res) => {
 app.get('/api/projects', (_req, res) => {
   const projects = getAllProjects();
   res.json({ projects });
+});
+
+// ─── Session replay ──────────────────────────────────────
+
+app.get('/api/sessions/:projectId/:sessionId/replay', (req, res) => {
+  const { projectId, sessionId } = req.params;
+  const projectDir = path.join(
+    os.homedir(),
+    '.claude',
+    'projects',
+    projectId
+  );
+  const filePath = path.join(projectDir, `${sessionId}.jsonl`);
+
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: 'Session file not found' });
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n').filter(l => l.trim());
+
+    interface ReplayMessage {
+      type: 'user' | 'assistant';
+      content: string;
+      timestamp: string;
+      model?: string;
+      tokens?: { input: number; output: number };
+    }
+
+    const messages: ReplayMessage[] = [];
+
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type !== 'user' && parsed.type !== 'assistant') continue;
+        if (!parsed.message) continue;
+
+        let text = '';
+        if (typeof parsed.message.content === 'string') {
+          text = parsed.message.content;
+        } else if (Array.isArray(parsed.message.content)) {
+          text = parsed.message.content
+            .filter((c: { type: string }) => c.type === 'text')
+            .map((c: { text: string }) => c.text)
+            .join('\n');
+        }
+        if (!text.trim()) continue;
+
+        const msg: ReplayMessage = {
+          type: parsed.type,
+          content: text.slice(0, 5000),
+          timestamp: parsed.timestamp || '',
+        };
+
+        if (parsed.type === 'assistant') {
+          if (parsed.message.model) {
+            msg.model = parsed.message.model;
+          }
+          if (parsed.message.usage) {
+            msg.tokens = {
+              input: parsed.message.usage.input_tokens || 0,
+              output: parsed.message.usage.output_tokens || 0,
+            };
+          }
+        }
+
+        messages.push(msg);
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    res.json({ messages });
+  } catch {
+    res.status(500).json({ error: 'Failed to read session file' });
+  }
 });
 
 // ─── History ────────────────────────────────────────────
@@ -299,6 +393,26 @@ app.get('/api/workflows/:id', (req, res) => {
 app.delete('/api/workflows/:id', (req, res) => {
   deleteWorkflow(req.params.id);
   res.json({ ok: true });
+});
+
+app.get('/api/workflows/:id/export', (req, res) => {
+  const workflow = exportWorkflow(req.params.id);
+  if (!workflow) {
+    res.status(404).json({ error: 'Workflow not found' });
+    return;
+  }
+  res.setHeader('Content-Disposition', `attachment; filename="${workflow.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.json"`);
+  res.json(workflow);
+});
+
+app.post('/api/workflows/import', (req, res) => {
+  const { name, steps } = req.body;
+  if (!name || !steps || !Array.isArray(steps)) {
+    res.status(400).json({ error: 'name and steps are required' });
+    return;
+  }
+  const workflow = importWorkflow(req.body);
+  res.json(workflow);
 });
 
 app.post('/api/workflows/:id/run', (req, res) => {
