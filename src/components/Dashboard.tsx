@@ -15,6 +15,8 @@ function findProjectForAgent(cwd: string | null, projects: ProjectInfo[]): Proje
   if (!cwd) return null;
   let best: ProjectInfo | null = null;
   for (const project of projects) {
+    const segments = project.path.split('/').filter(Boolean);
+    if (segments.length < 3) continue;
     if (cwd.startsWith(project.path) && (!best || project.path.length > best.path.length)) {
       best = project;
     }

@@ -4,6 +4,10 @@ import { getProjects } from '../hooks/useAgents';
 import { SessionReplay } from './SessionReplay';
 
 function projectHasRunningAgent(project: ProjectInfo, cwds: string[]): boolean {
+  // Require project path to be specific enough (at least 3 segments like /Users/foo/repo)
+  // to avoid broad matches like /Users/foo matching every agent
+  const segments = project.path.split('/').filter(Boolean);
+  if (segments.length < 3) return false;
   return cwds.some(cwd => cwd.startsWith(project.path));
 }
 
