@@ -489,7 +489,7 @@ wss.on('connection', (ws: WebSocket) => {
   ws.send(
     JSON.stringify({
       ...state,
-      history: getHistory(30),
+      history: getHistory(120),
     })
   );
 

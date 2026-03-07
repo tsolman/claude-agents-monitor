@@ -7,7 +7,7 @@ export interface HistoryEntry {
   totalMemory: number;
 }
 
-const MAX_ENTRIES = 900; // 30 min at 2s intervals
+const MAX_ENTRIES = 3600; // 2h at 2s intervals
 const history: HistoryEntry[] = [];
 
 export function recordSnapshot(state: MonitorState): void {

@@ -52,7 +52,7 @@ export function useAgents() {
               totalMemory: data.totalMemory,
             };
             const updated = [...prev, entry];
-            const cutoff = Date.now() - 30 * 60 * 1000;
+            const cutoff = Date.now() - 120 * 60 * 1000;
             return updated.filter(e => e.timestamp >= cutoff);
           });
         }
