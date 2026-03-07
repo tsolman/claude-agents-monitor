@@ -26,6 +26,7 @@ export interface StepStatus {
   startedAt?: number;
   completedAt?: number;
   error?: string;
+  output?: string;
 }
 
 export interface WorkflowRun {
@@ -177,7 +178,7 @@ async function executeWorkflow(
       break;
     }
 
-    const promises = ready.map(step => executeStep(step, run));
+    const promises = ready.map(step => executeStep(step, run, workflow));
     const results = await Promise.allSettled(promises);
 
     for (let i = 0; i < ready.length; i++) {
@@ -201,17 +202,43 @@ async function executeWorkflow(
   }
 }
 
+const MAX_OUTPUT_BYTES = 50_000; // 50 KB per step
+
+const MAX_CONTEXT_PER_DEP = 10_000; // 10 KB of output per dependency
+
+function buildPromptWithContext(
+  step: WorkflowStep,
+  run: WorkflowRun,
+  workflow: Workflow
+): string {
+  if (step.dependsOn.length === 0) return step.prompt;
+
+  const contextParts: string[] = [];
+  for (const depId of step.dependsOn) {
+    const depStatus = run.stepStatuses[depId];
+    const depStep = workflow.steps.find(s => s.id === depId);
+    if (!depStatus?.output || !depStep) continue;
+    const trimmed = depStatus.output.slice(0, MAX_CONTEXT_PER_DEP);
+    contextParts.push(`--- Output from "${depStep.name}" ---\n${trimmed}`);
+  }
+
+  if (contextParts.length === 0) return step.prompt;
+  return `Context from previous steps:\n\n${contextParts.join('\n\n')}\n\n---\n\n${step.prompt}`;
+}
+
 function executeStep(
   step: WorkflowStep,
-  run: WorkflowRun
+  run: WorkflowRun,
+  workflow: Workflow
 ): Promise<boolean> {
   return new Promise(resolve => {
     run.stepStatuses[step.id] = { status: 'running', startedAt: Date.now() };
 
     try {
-      const child = spawn('claude', ['-p', step.prompt], {
+      const prompt = buildPromptWithContext(step, run, workflow);
+      const child = spawn('claude', ['-p', prompt], {
         cwd: step.cwd,
-        stdio: 'ignore',
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
       run.stepStatuses[step.id].pid = child.pid;
@@ -219,10 +246,25 @@ function executeStep(
       const processes = runProcesses.get(run.id);
       if (processes) processes.set(step.id, child);
 
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+
+      const collectChunk = (chunk: Buffer) => {
+        if (totalBytes < MAX_OUTPUT_BYTES) {
+          chunks.push(chunk);
+          totalBytes += chunk.length;
+        }
+      };
+
+      child.stdout?.on('data', collectChunk);
+      child.stderr?.on('data', collectChunk);
+
       child.on('close', code => {
+        const output = Buffer.concat(chunks).toString('utf-8').slice(0, MAX_OUTPUT_BYTES);
         run.stepStatuses[step.id].status =
           code === 0 ? 'completed' : 'failed';
         run.stepStatuses[step.id].completedAt = Date.now();
+        run.stepStatuses[step.id].output = output;
         if (code !== 0) {
           run.stepStatuses[step.id].error = `Exit code: ${code}`;
         }

@@ -14,7 +14,7 @@
 - [ ] **Cost history timeline** — Track costs over time instead of recalculating on-demand. Show a spend curve
 - [ ] **Alert/threshold system** — Notify when agent CPU > X%, memory > Y%, or session cost exceeds a budget
 - [ ] **Agent comparison view** — Select 2+ agents and compare metrics side-by-side
-- [ ] **Workflow output capture** — Store agent stdout/stderr per step so you can see what each step actually did
+- [x] **Workflow output capture** — Store agent stdout/stderr per step so you can see what each step actually did
 - [x] **Confirmation dialogs** — Stop/kill/delete are one-click with no undo. Add confirmation for destructive actions
 - [x] **Project dashboard** — Unified view that merges running agents with their project metadata (sessions, branches, costs)
 - [x] **Session replay** — Step through a completed session's user/assistant exchanges as a conversation view
@@ -23,7 +23,7 @@
 ## Larger Bets
 
 - [ ] **Live agent output streaming** — Stream stdout/stderr from running agents to the UI in real-time via WebSocket
-- [ ] **Inter-agent messaging** — Pass data between workflow steps (step A's output becomes step B's context)
+- [x] **Inter-agent messaging** — Pass data between workflow steps (step A's output becomes step B's context)
 - [ ] **Multi-machine monitoring** — Connect multiple monitor instances across machines into one dashboard
 - [ ] **Webhook/Slack notifications** — Push events (agent started, failed, cost threshold hit) to external services
 - [ ] **Authentication & access control** — Currently anyone on the network can control agents

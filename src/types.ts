@@ -76,6 +76,7 @@ export interface StepStatus {
   startedAt?: number;
   completedAt?: number;
   error?: string;
+  output?: string;
 }
 
 export interface WorkflowRun {

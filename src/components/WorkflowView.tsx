@@ -343,6 +343,7 @@ function RunCard({
   onCancel: () => void;
 }) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [expandedStep, setExpandedStep] = useState<string | null>(null);
 
   const statusConfig: Record<string, { color: string; bg: string }> = {
     running: { color: '#58a6ff', bg: 'rgba(88, 166, 255, 0.1)' },
@@ -414,19 +415,35 @@ function RunCard({
             pending: '#252b3b',
             skipped: '#1a1f2b',
           };
+          const hasOutput = status.output && status.output.trim().length > 0;
+          const isExpanded = expandedStep === stepId;
           return (
-            <div
-              key={stepId}
-              className="flex items-center gap-2 py-0.5 font-mono text-[10px]"
-            >
-              <span
-                className="block h-1.5 w-1.5 rounded-full"
-                style={{ background: dotColors[status.status] }}
-              />
-              <span className="text-white/25">{stepId.slice(0, 8)}</span>
-              <span className="text-white/12">{status.status}</span>
-              {status.error && (
-                <span className="text-danger/60">{status.error}</span>
+            <div key={stepId}>
+              <button
+                onClick={() => hasOutput && setExpandedStep(isExpanded ? null : stepId)}
+                className={`flex w-full items-center gap-2 py-1 font-mono text-[10px] text-left ${
+                  hasOutput ? 'cursor-pointer hover:bg-surface-2/30 -mx-2 px-2 rounded' : 'cursor-default'
+                }`}
+              >
+                <span
+                  className="block h-1.5 w-1.5 rounded-full shrink-0"
+                  style={{ background: dotColors[status.status] }}
+                />
+                <span className="text-white/25">{stepId.slice(0, 8)}</span>
+                <span className="text-white/12">{status.status}</span>
+                {status.error && (
+                  <span className="text-danger/60">{status.error}</span>
+                )}
+                {hasOutput && (
+                  <span className="ml-auto text-white/10">
+                    {isExpanded ? '▾ output' : '▸ output'}
+                  </span>
+                )}
+              </button>
+              {isExpanded && status.output && (
+                <pre className="mt-1 mb-2 max-h-60 overflow-auto rounded-lg bg-surface-0 p-3 font-mono text-[10px] leading-relaxed text-white/40 ring-1 ring-border-subtle whitespace-pre-wrap break-words">
+                  {status.output}
+                </pre>
               )}
             </div>
           );
