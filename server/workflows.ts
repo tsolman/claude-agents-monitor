@@ -252,6 +252,158 @@ export function getRun(id: string): WorkflowRun | undefined {
   return runs.get(id);
 }
 
+// ─── Workflow Templates ─────────────────────────────────
+
+interface WorkflowTemplateStep {
+  name: string;
+  prompt: string;
+  cwd: string;
+  dependsOn: string[];
+}
+
+interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  steps: WorkflowTemplateStep[];
+}
+
+const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
+  {
+    id: 'code-review',
+    name: 'Code Review',
+    description: 'Review codebase for bugs, security issues, and suggest improvements.',
+    category: 'quality',
+    steps: [
+      {
+        name: 'Review code for bugs and issues',
+        prompt: 'Review the codebase for bugs, security issues, and code quality problems. Provide a detailed report.',
+        cwd: '{{cwd}}',
+        dependsOn: [],
+      },
+      {
+        name: 'Suggest improvements',
+        prompt: 'Based on the code review, suggest specific improvements with code examples.',
+        cwd: '{{cwd}}',
+        dependsOn: ['step-0'],
+      },
+    ],
+  },
+  {
+    id: 'refactor-test',
+    name: 'Refactor + Test',
+    description: 'Refactor code for readability, write tests, and verify they pass.',
+    category: 'quality',
+    steps: [
+      {
+        name: 'Refactor code',
+        prompt: 'Refactor the code to improve readability, reduce duplication, and follow best practices. Make the changes.',
+        cwd: '{{cwd}}',
+        dependsOn: [],
+      },
+      {
+        name: 'Write tests',
+        prompt: 'Write comprehensive tests for the refactored code. Ensure good coverage of edge cases.',
+        cwd: '{{cwd}}',
+        dependsOn: ['step-0'],
+      },
+      {
+        name: 'Run tests',
+        prompt: 'Run all tests and fix any failures.',
+        cwd: '{{cwd}}',
+        dependsOn: ['step-1'],
+      },
+    ],
+  },
+  {
+    id: 'documentation',
+    name: 'Documentation',
+    description: 'Generate comprehensive project documentation.',
+    category: 'docs',
+    steps: [
+      {
+        name: 'Generate docs',
+        prompt: 'Generate comprehensive documentation for this project including README, API docs, and inline comments where missing.',
+        cwd: '{{cwd}}',
+        dependsOn: [],
+      },
+    ],
+  },
+  {
+    id: 'bug-fix',
+    name: 'Bug Fix',
+    description: 'Diagnose and fix bugs with regression tests.',
+    category: 'fix',
+    steps: [
+      {
+        name: 'Diagnose bug',
+        prompt: 'Analyze the codebase to identify bugs. Check test failures, error logs, and code patterns that could cause issues.',
+        cwd: '{{cwd}}',
+        dependsOn: [],
+      },
+      {
+        name: 'Fix bugs',
+        prompt: 'Fix the identified bugs. Write regression tests for each fix.',
+        cwd: '{{cwd}}',
+        dependsOn: ['step-0'],
+      },
+    ],
+  },
+  {
+    id: 'security-audit',
+    name: 'Security Audit',
+    description: 'Scan for vulnerabilities and fix security issues.',
+    category: 'quality',
+    steps: [
+      {
+        name: 'Scan for vulnerabilities',
+        prompt: 'Perform a security audit: check for injection vulnerabilities, auth issues, exposed secrets, and OWASP top 10 risks.',
+        cwd: '{{cwd}}',
+        dependsOn: [],
+      },
+      {
+        name: 'Fix security issues',
+        prompt: 'Fix the identified security vulnerabilities and add security tests.',
+        cwd: '{{cwd}}',
+        dependsOn: ['step-0'],
+      },
+    ],
+  },
+];
+
+export function getWorkflowTemplates(): WorkflowTemplate[] {
+  return WORKFLOW_TEMPLATES;
+}
+
+export function createWorkflowFromTemplate(
+  templateId: string,
+  cwd: string
+): Workflow | null {
+  const template = WORKFLOW_TEMPLATES.find(t => t.id === templateId);
+  if (!template) return null;
+
+  // Generate real step IDs and map placeholder dependsOn references
+  const stepIds = template.steps.map(() => randomUUID());
+
+  const steps: Array<{ id: string; name: string; prompt: string; cwd: string; dependsOn: string[] }> = template.steps.map((s, i) => ({
+    id: stepIds[i],
+    name: s.name,
+    prompt: s.prompt,
+    cwd: s.cwd.replace(/\{\{cwd\}\}/g, cwd),
+    dependsOn: s.dependsOn.map(dep => {
+      const depIndex = parseInt(dep.replace('step-', ''));
+      return stepIds[depIndex];
+    }),
+  }));
+
+  return createWorkflow({
+    name: template.name,
+    description: template.description,
+    steps,
+  });
+}
+
 export function cancelRun(id: string): boolean {
   const run = runs.get(id);
   if (!run || run.status !== 'running') return false;

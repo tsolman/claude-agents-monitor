@@ -4,9 +4,10 @@ import { Dashboard } from './components/Dashboard';
 import { HistoryView } from './components/HistoryView';
 import { WorkflowView } from './components/WorkflowView';
 import { ProjectsView } from './components/ProjectsView';
+import { ProjectDashboard } from './components/ProjectDashboard';
 import { Notifications } from './components/Notifications';
 
-type Tab = 'monitor' | 'workflows' | 'history' | 'projects';
+type Tab = 'monitor' | 'workflows' | 'history' | 'projects' | 'dashboard';
 
 const tabIcons: Record<Tab, JSX.Element> = {
   monitor: (
@@ -30,6 +31,14 @@ const tabIcons: Record<Tab, JSX.Element> = {
       <rect x="1" y="1" width="6" height="6" rx="1.5" /><rect x="9" y="1" width="6" height="6" rx="1.5" /><rect x="1" y="9" width="6" height="6" rx="1.5" /><rect x="9" y="9" width="6" height="6" rx="1.5" />
     </svg>
   ),
+  dashboard: (
+    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor" opacity="0.9">
+      <rect x="1" y="1" width="6" height="4" rx="1" />
+      <rect x="9" y="1" width="6" height="7" rx="1" />
+      <rect x="1" y="7" width="6" height="8" rx="1" />
+      <rect x="9" y="10" width="6" height="5" rx="1" />
+    </svg>
+  ),
 };
 
 const tabs: { id: Tab; label: string; shortcut: string }[] = [
@@ -37,6 +46,7 @@ const tabs: { id: Tab; label: string; shortcut: string }[] = [
   { id: 'workflows', label: 'Workflows', shortcut: '2' },
   { id: 'history', label: 'History', shortcut: '3' },
   { id: 'projects', label: 'Projects', shortcut: '4' },
+  { id: 'dashboard', label: 'Dashboard', shortcut: '5' },
 ];
 
 function timeAgo(timestamp: number): string {
@@ -69,6 +79,7 @@ export default function App() {
       else if (e.key === '2') setActiveTab('workflows');
       else if (e.key === '3') setActiveTab('history');
       else if (e.key === '4') setActiveTab('projects');
+      else if (e.key === '5') setActiveTab('dashboard');
     };
     window.addEventListener('keydown', handleKeydown);
     return () => window.removeEventListener('keydown', handleKeydown);
@@ -182,6 +193,7 @@ export default function App() {
         {activeTab === 'workflows' && <WorkflowView />}
         {activeTab === 'history' && <HistoryView history={history} />}
         {activeTab === 'projects' && <ProjectsView />}
+        {activeTab === 'dashboard' && <ProjectDashboard />}
       </main>
 
       {/* Notifications */}

@@ -207,3 +207,48 @@ export async function importWorkflowJson(file: File): Promise<Workflow> {
     }),
   });
 }
+
+// ─── Workflow templates ─────────────────────────────────
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  steps: Array<{ name: string; prompt: string; cwd: string; dependsOn: string[] }>;
+}
+
+export async function getWorkflowTemplates(): Promise<{ templates: WorkflowTemplate[] }> {
+  return apiFetch('/workflow-templates');
+}
+
+export async function createFromTemplate(
+  templateId: string,
+  cwd: string
+): Promise<Workflow> {
+  return apiFetch(`/workflow-templates/${templateId}/create`, {
+    method: 'POST',
+    body: JSON.stringify({ cwd }),
+  });
+}
+
+// ─── Cost breakdown ─────────────────────────────────────
+
+export interface ModelCostBreakdown {
+  model: string;
+  displayName: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  totalCost: number;
+  sessionCount: number;
+}
+
+export async function getCostBreakdown(): Promise<{
+  models: ModelCostBreakdown[];
+  totalCost: number;
+  totalSessions: number;
+}> {
+  return apiFetch('/costs/breakdown');
+}

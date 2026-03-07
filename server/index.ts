@@ -10,7 +10,7 @@ import { stopAgent, startAgent } from './control.js';
 import { recordSnapshot, getHistory } from './history.js';
 import { trackLifecycle, getEvents } from './notifications.js';
 import { getSessionLogs, getFullSessionLogs, getProjectSessions } from './logs.js';
-import { getAgentCost } from './costs.js';
+import { getAgentCost, getCostBreakdownByModel } from './costs.js';
 import {
   getRegisteredAgents,
   registerAgent,
@@ -30,6 +30,8 @@ import {
   cancelRun,
   exportWorkflow,
   importWorkflow,
+  getWorkflowTemplates,
+  createWorkflowFromTemplate,
 } from './workflows.js';
 import { getAllProjects } from './projects.js';
 
@@ -237,6 +239,13 @@ app.get('/api/projects', (_req, res) => {
   res.json({ projects });
 });
 
+// ─── Cost breakdown ──────────────────────────────────────
+
+app.get('/api/costs/breakdown', (_req, res) => {
+  const breakdown = getCostBreakdownByModel();
+  res.json(breakdown);
+});
+
 // ─── Session replay ──────────────────────────────────────
 
 app.get('/api/sessions/:projectId/:sessionId/replay', (req, res) => {
@@ -412,6 +421,24 @@ app.post('/api/workflows/import', (req, res) => {
     return;
   }
   const workflow = importWorkflow(req.body);
+  res.json(workflow);
+});
+
+app.get('/api/workflow-templates', (_req, res) => {
+  res.json({ templates: getWorkflowTemplates() });
+});
+
+app.post('/api/workflow-templates/:id/create', (req, res) => {
+  const { cwd } = req.body;
+  if (!cwd) {
+    res.status(400).json({ error: 'cwd is required' });
+    return;
+  }
+  const workflow = createWorkflowFromTemplate(req.params.id, cwd);
+  if (!workflow) {
+    res.status(404).json({ error: 'Template not found' });
+    return;
+  }
   res.json(workflow);
 });
 

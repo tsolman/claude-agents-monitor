@@ -5,7 +5,7 @@
 - [x] **Session-level cost tracking** — Extract per-session costs from JSONL logs and show them in the Projects tab
 - [x] **Workflow persistence** — Save workflows to a JSON file on disk so they survive restarts
 - [x] **Full log viewer** — Replace the 30-message truncated panel with a searchable, filterable log viewer
-- [ ] **Cost breakdown by model** — Pie/bar chart showing Opus vs Sonnet vs Haiku spend (pricing data already in `costs.ts`)
+- [x] **Cost breakdown by model** — Pie/bar chart showing Opus vs Sonnet vs Haiku spend (pricing data already in `costs.ts`)
 - [x] **Link running agents to projects** — Cross-reference agent working directories with the Projects tab to show which project an agent belongs to
 - [x] **Configurable history window** — The API already supports `?minutes=N`, but the UI hardcodes 30 minutes
 
@@ -16,9 +16,9 @@
 - [ ] **Agent comparison view** — Select 2+ agents and compare metrics side-by-side
 - [ ] **Workflow output capture** — Store agent stdout/stderr per step so you can see what each step actually did
 - [x] **Confirmation dialogs** — Stop/kill/delete are one-click with no undo. Add confirmation for destructive actions
-- [ ] **Project dashboard** — Unified view that merges running agents with their project metadata (sessions, branches, costs)
+- [x] **Project dashboard** — Unified view that merges running agents with their project metadata (sessions, branches, costs)
 - [x] **Session replay** — Step through a completed session's user/assistant exchanges as a conversation view
-- [ ] **Workflow templates** — Pre-built workflow patterns (e.g., "code review", "refactor + test", "multi-repo sync")
+- [x] **Workflow templates** — Pre-built workflow patterns (e.g., "code review", "refactor + test", "multi-repo sync")
 
 ## Larger Bets
 

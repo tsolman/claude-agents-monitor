@@ -9,13 +9,18 @@ import {
   cancelWorkflowRun,
   exportWorkflowJson,
   importWorkflowJson,
+  getWorkflowTemplates as fetchWorkflowTemplates,
+  createFromTemplate,
 } from '../hooks/useAgents';
+import type { WorkflowTemplate } from '../hooks/useAgents';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export function WorkflowView() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [showEditor, setShowEditor] = useState(false);
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<WorkflowTemplate | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -26,6 +31,7 @@ export function WorkflowView() {
 
   useEffect(() => {
     refresh();
+    fetchWorkflowTemplates().then(r => setTemplates(r.templates));
     const interval = setInterval(refresh, 3000);
     return () => clearInterval(interval);
   }, [refresh]);
@@ -60,8 +66,94 @@ export function WorkflowView() {
     }
   };
 
+  const handleCreateFromTemplate = async (templateId: string, cwd: string) => {
+    await createFromTemplate(templateId, cwd);
+    setSelectedTemplate(null);
+    refresh();
+  };
+
+  const categoryColors: Record<string, { badge: string; border: string; bg: string }> = {
+    quality: {
+      badge: 'bg-data-blue/15 text-data-blue ring-data-blue/20',
+      border: 'ring-data-blue/10 hover:ring-data-blue/25',
+      bg: 'text-data-blue/60',
+    },
+    docs: {
+      badge: 'bg-data-purple/15 text-data-purple ring-data-purple/20',
+      border: 'ring-data-purple/10 hover:ring-data-purple/25',
+      bg: 'text-data-purple/60',
+    },
+    fix: {
+      badge: 'bg-accent/15 text-accent ring-accent/20',
+      border: 'ring-accent/10 hover:ring-accent/25',
+      bg: 'text-accent/60',
+    },
+  };
+
+  const groupedTemplates = templates.reduce<Record<string, WorkflowTemplate[]>>((acc, t) => {
+    (acc[t.category] ??= []).push(t);
+    return acc;
+  }, {});
+
   return (
     <div className="space-y-10 animate-fade-in">
+      {/* Templates section */}
+      {templates.length > 0 && (
+        <div>
+          <h2 className="mb-5 text-[13px] font-medium uppercase tracking-widest text-white/30">
+            Templates
+          </h2>
+          <div className="space-y-6">
+            {Object.entries(groupedTemplates).map(([category, catTemplates]) => (
+              <div key={category}>
+                <span
+                  className={`mb-3 inline-block rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide ring-1 ${
+                    categoryColors[category]?.badge || 'bg-surface-3 text-white/30 ring-border'
+                  }`}
+                >
+                  {category}
+                </span>
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {catTemplates.map(template => (
+                    <button
+                      key={template.id}
+                      onClick={() => setSelectedTemplate(template)}
+                      className={`card group cursor-pointer p-4 text-left transition-all ring-1 ${
+                        categoryColors[template.category]?.border || 'ring-border hover:ring-border-strong'
+                      }`}
+                    >
+                      <h4 className="text-[13px] font-semibold text-white/70 group-hover:text-white/90 transition-colors">
+                        {template.name}
+                      </h4>
+                      <p className="mt-1 text-[11px] text-white/25 line-clamp-2">
+                        {template.description}
+                      </p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-white/15">
+                          {template.steps.length} {template.steps.length === 1 ? 'step' : 'steps'}
+                        </span>
+                        <span className={`font-mono text-[10px] ${categoryColors[template.category]?.bg || 'text-white/20'}`}>
+                          {template.steps.filter(s => s.dependsOn.length > 0).length > 0 ? 'sequential' : 'parallel'}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Template CWD modal */}
+      {selectedTemplate && (
+        <TemplateCwdModal
+          template={selectedTemplate}
+          onSubmit={(cwd) => handleCreateFromTemplate(selectedTemplate.id, cwd)}
+          onClose={() => setSelectedTemplate(null)}
+        />
+      )}
+
       {/* Workflows section */}
       <div>
         <div className="mb-5 flex items-center justify-between">
@@ -535,6 +627,238 @@ function WorkflowEditor({
         >
           Save Workflow
         </button>
+      </div>
+    </div>
+  );
+}
+
+function useDirSuggestions(input: string) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    clearTimeout(timerRef.current);
+
+    if (!input.startsWith('/')) {
+      setSuggestions([]);
+      return;
+    }
+
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/directories?path=${encodeURIComponent(input)}`);
+        const data = await res.json();
+        setSuggestions(data.directories || []);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 150);
+
+    return () => clearTimeout(timerRef.current);
+  }, [input]);
+
+  return suggestions;
+}
+
+function TemplateCwdModal({
+  template,
+  onSubmit,
+  onClose,
+}: {
+  template: WorkflowTemplate;
+  onSubmit: (cwd: string) => void;
+  onClose: () => void;
+}) {
+  const [cwd, setCwd] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestions = useDirSuggestions(cwd);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  useEffect(() => {
+    setSelectedIdx(-1);
+  }, [suggestions]);
+
+  const pickSuggestion = useCallback((dir: string) => {
+    setCwd(dir + '/');
+    setShowSuggestions(false);
+    inputRef.current?.focus();
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSuggestions || suggestions.length === 0) {
+      if (e.key === 'Tab' && cwd.startsWith('/')) {
+        e.preventDefault();
+        setShowSuggestions(true);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIdx(i => Math.min(i + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Tab' || e.key === 'Enter') {
+      if (selectedIdx >= 0 && selectedIdx < suggestions.length) {
+        e.preventDefault();
+        pickSuggestion(suggestions[selectedIdx]);
+      } else if (suggestions.length === 1) {
+        e.preventDefault();
+        pickSuggestion(suggestions[0]);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!cwd.trim()) return;
+    setLoading(true);
+    try {
+      await onSubmit(cwd.trim());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fade-in"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div className="card scanline-overlay w-full max-w-md border-border-strong p-0 shadow-2xl shadow-black/50 animate-fade-in">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
+          <div>
+            <h2 className="text-[14px] font-semibold text-white/85">
+              {template.name}
+            </h2>
+            <p className="mt-0.5 font-mono text-[10px] text-white/20">
+              {template.steps.length} {template.steps.length === 1 ? 'step' : 'steps'}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-white/20 transition-colors hover:bg-surface-3 hover:text-white/50"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="space-y-4 px-6 py-5">
+          <p className="text-[12px] text-white/30">{template.description}</p>
+
+          <div>
+            <label className="mb-1.5 flex items-baseline justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-white/25">
+                Working Directory
+              </span>
+              <span className="font-mono text-[9px] text-white/10">
+                tab to autocomplete
+              </span>
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 select-none font-mono text-[12px] text-accent/40">$</span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={cwd}
+                onChange={e => {
+                  setCwd(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onKeyDown={handleKeyDown}
+                placeholder="/path/to/project"
+                className="input-field pl-7 font-mono"
+                autoComplete="off"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg bg-surface-2 py-1 ring-1 ring-border">
+                  {suggestions.map((dir, i) => (
+                    <button
+                      key={dir}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        pickSuggestion(dir);
+                      }}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-[11px] transition-colors ${
+                        i === selectedIdx
+                          ? 'bg-accent-dim text-accent'
+                          : 'text-white/40 hover:bg-surface-3 hover:text-white/60'
+                      }`}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="shrink-0 opacity-40">
+                        <path d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5a.25.25 0 01-.2-.1l-.9-1.2c-.33-.44-.85-.7-1.4-.7z" />
+                      </svg>
+                      {dir}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Steps preview */}
+          <div>
+            <span className="mb-2 block text-[10px] font-medium uppercase tracking-widest text-white/15">
+              Steps
+            </span>
+            <div className="space-y-1">
+              {template.steps.map((step, i) => (
+                <div key={i} className="flex items-center gap-2 font-mono text-[10px]">
+                  <span className="flex h-4 w-4 items-center justify-center rounded bg-surface-3 text-[9px] text-white/25">
+                    {i + 1}
+                  </span>
+                  <span className="text-white/35">{step.name}</span>
+                  {step.dependsOn.length > 0 && (
+                    <span className="text-white/10">
+                      (after step {step.dependsOn.map(d => parseInt(d.replace('step-', '')) + 1).join(', ')})
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2.5 border-t border-border-subtle px-6 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-[12px] text-white/30 transition-colors hover:text-white/60"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !cwd.trim()}
+            className="rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-surface-0 transition-all hover:brightness-110 disabled:opacity-40"
+          >
+            {loading ? 'Creating...' : 'Create Workflow'}
+          </button>
+        </div>
       </div>
     </div>
   );
