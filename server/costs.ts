@@ -14,7 +14,9 @@ export interface CostInfo {
 
 // Per-million-token pricing
 const PRICING: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
+  'claude-opus-4-6':   { input: 15,   output: 75,  cacheWrite: 18.75, cacheRead: 1.50 },
   'claude-opus-4':     { input: 15,   output: 75,  cacheWrite: 18.75, cacheRead: 1.50 },
+  'claude-sonnet-4-6': { input: 3,    output: 15,  cacheWrite: 3.75,  cacheRead: 0.30 },
   'claude-sonnet-4':   { input: 3,    output: 15,  cacheWrite: 3.75,  cacheRead: 0.30 },
   'claude-sonnet-3-5': { input: 3,    output: 15,  cacheWrite: 3.75,  cacheRead: 0.30 },
   'claude-haiku-3-5':  { input: 0.80, output: 4,   cacheWrite: 1.00,  cacheRead: 0.08 },
@@ -59,6 +61,8 @@ function parseSessionCost(filePath: string): CostInfo {
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split('\n').filter(l => l.trim());
 
+  const seen = new Set<string>();
+  let directCost = 0;
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheWriteTokens = 0;
@@ -68,7 +72,20 @@ function parseSessionCost(filePath: string): CostInfo {
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line);
+
+      // Dedup: skip duplicate message entries
+      const msgId = parsed.message?.id;
+      const reqId = parsed.requestId;
+      if (msgId && reqId) {
+        const key = `${msgId}:${reqId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+
       if (parsed.type !== 'assistant') continue;
+
+      // Forward-compatible: use costUSD if available
+      if (typeof parsed.costUSD === 'number') directCost += parsed.costUSD;
 
       // Usage can be at top level or inside message
       const usage = parsed.message?.usage || parsed.usage;
@@ -87,12 +104,18 @@ function parseSessionCost(filePath: string): CostInfo {
     }
   }
 
-  const pricing = getPricing(lastModel);
-  const totalCost =
-    (inputTokens / 1_000_000) * pricing.input +
-    (outputTokens / 1_000_000) * pricing.output +
-    (cacheWriteTokens / 1_000_000) * pricing.cacheWrite +
-    (cacheReadTokens / 1_000_000) * pricing.cacheRead;
+  // Prefer direct costUSD if available, else compute from tokens
+  let totalCost: number;
+  if (directCost > 0) {
+    totalCost = directCost;
+  } else {
+    const pricing = getPricing(lastModel);
+    totalCost =
+      (inputTokens / 1_000_000) * pricing.input +
+      (outputTokens / 1_000_000) * pricing.output +
+      (cacheWriteTokens / 1_000_000) * pricing.cacheWrite +
+      (cacheReadTokens / 1_000_000) * pricing.cacheRead;
+  }
 
   return {
     inputTokens,
@@ -146,7 +169,9 @@ export interface CostBreakdownResult {
 }
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  'claude-opus-4-6': 'Opus 4.6',
   'claude-opus-4': 'Opus 4',
+  'claude-sonnet-4-6': 'Sonnet 4.6',
   'claude-sonnet-4': 'Sonnet 4',
   'claude-sonnet-3-5': 'Sonnet 3.5',
   'claude-haiku-3-5': 'Haiku 3.5',
@@ -159,12 +184,23 @@ function parseSessionByModel(filePath: string): Map<string, { input: number; out
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split('\n').filter(l => l.trim());
 
+  const seen = new Set<string>();
   const modelUsage = new Map<string, { input: number; output: number; cacheWrite: number; cacheRead: number }>();
   let lastModel = 'unknown';
 
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line);
+
+      // Dedup: skip duplicate message entries
+      const msgId = parsed.message?.id;
+      const reqId = parsed.requestId;
+      if (msgId && reqId) {
+        const key = `${msgId}:${reqId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+
       if (parsed.type !== 'assistant') continue;
 
       const usage = parsed.message?.usage || parsed.usage;

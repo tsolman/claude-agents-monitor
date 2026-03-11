@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { startAgent } from '../hooks/useAgents';
+import { startAgent, getAgentTemplates, createAgentTemplate, deleteAgentTemplate } from '../hooks/useAgents';
+import type { AgentTemplate } from '../hooks/useAgents';
 
 interface LaunchModalProps {
   onClose: () => void;
@@ -40,6 +41,10 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
   const [error, setError] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(-1);
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const cwdRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +52,12 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
 
   useEffect(() => {
     cwdRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    getAgentTemplates()
+      .then(result => setTemplates(result.templates))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -60,6 +71,40 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
   useEffect(() => {
     setSelectedIdx(-1);
   }, [suggestions]);
+
+  const handleSelectTemplate = useCallback((template: AgentTemplate) => {
+    setPrompt(template.prompt);
+    if (template.cwd) setCwd(template.cwd);
+  }, []);
+
+  const handleSaveTemplate = useCallback(async () => {
+    if (!templateName.trim() || !prompt.trim()) return;
+    setSavingTemplate(true);
+    try {
+      const template = await createAgentTemplate({
+        name: templateName.trim(),
+        prompt: prompt.trim(),
+        cwd: cwd.trim() || undefined,
+      });
+      setTemplates(prev => [...prev, template]);
+      setShowSaveTemplate(false);
+      setTemplateName('');
+    } catch {
+      // ignore
+    } finally {
+      setSavingTemplate(false);
+    }
+  }, [templateName, prompt, cwd]);
+
+  const handleDeleteTemplate = useCallback(async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteAgentTemplate(id);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const pickSuggestion = useCallback((dir: string) => {
     setCwd(dir + '/');
@@ -146,6 +191,34 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
 
         {/* Body */}
         <div className="space-y-5 px-6 py-5">
+          {/* Template picker */}
+          {templates.length > 0 && (
+            <div>
+              <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-white/25">
+                Templates
+              </label>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {templates.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleSelectTemplate(t)}
+                    className="group relative flex shrink-0 items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-left ring-1 ring-border-subtle transition-all hover:bg-surface-3 hover:ring-accent/30"
+                  >
+                    <span className="text-[12px] text-white/50 group-hover:text-white/70">
+                      {t.icon || '>'} {t.name}
+                    </span>
+                    <button
+                      onClick={(e) => handleDeleteTemplate(t.id, e)}
+                      className="ml-1 text-[10px] text-white/10 hover:text-danger transition-colors"
+                    >
+                      x
+                    </button>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="mb-1.5 flex items-baseline justify-between">
               <span className="text-[11px] font-medium uppercase tracking-widest text-white/25">
@@ -236,20 +309,60 @@ export function LaunchModal({ onClose }: LaunchModalProps) {
           <span className="font-mono text-[9px] text-white/10">
             cmd+enter to launch
           </span>
-          <div className="flex gap-2.5">
-            <button
-              onClick={onClose}
-              className="rounded-lg px-4 py-2 text-[12px] text-white/30 transition-colors hover:text-white/60"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleLaunch}
-              disabled={loading}
-              className="rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-surface-0 transition-all hover:brightness-110 disabled:opacity-40"
-            >
-              {loading ? 'Launching...' : 'Launch'}
-            </button>
+          <div className="flex items-center gap-2.5">
+            {showSaveTemplate ? (
+              <>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={e => setTemplateName(e.target.value)}
+                  placeholder="Template name..."
+                  className="input-field w-40 py-1.5 text-[11px]"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleSaveTemplate();
+                    if (e.key === 'Escape') setShowSaveTemplate(false);
+                  }}
+                  autoFocus
+                />
+                <button
+                  onClick={handleSaveTemplate}
+                  disabled={savingTemplate || !templateName.trim()}
+                  className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-accent transition-colors hover:bg-accent-dim disabled:opacity-30"
+                >
+                  {savingTemplate ? '...' : 'Save'}
+                </button>
+                <button
+                  onClick={() => setShowSaveTemplate(false)}
+                  className="rounded-lg px-2 py-1.5 text-[11px] text-white/30 hover:text-white/60"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                {prompt.trim() && (
+                  <button
+                    onClick={() => setShowSaveTemplate(true)}
+                    className="rounded-lg px-3 py-2 text-[11px] text-white/20 transition-colors hover:text-white/50"
+                  >
+                    Save as Template
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="rounded-lg px-4 py-2 text-[12px] text-white/30 transition-colors hover:text-white/60"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleLaunch}
+                  disabled={loading}
+                  className="rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-surface-0 transition-all hover:brightness-110 disabled:opacity-40"
+                >
+                  {loading ? 'Launching...' : 'Launch'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

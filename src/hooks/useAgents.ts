@@ -14,6 +14,7 @@ export function useAgents() {
   const [connected, setConnected] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [notifications, setNotifications] = useState<AgentEvent[]>([]);
+  const [agentOutputs, setAgentOutputs] = useState<Record<number, string[]>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -34,6 +35,16 @@ export function useAgents() {
     ws.onmessage = event => {
       try {
         const data = JSON.parse(event.data);
+
+        // Agent output streaming
+        if (data.type === 'agent-output') {
+          setAgentOutputs(prev => {
+            const lines = [...(prev[data.pid] || []), data.line];
+            if (lines.length > 500) lines.shift();
+            return { ...prev, [data.pid]: lines };
+          });
+          return; // Don't process as regular state update
+        }
 
         // Initial message includes full history
         if (data.history) {
@@ -79,7 +90,7 @@ export function useAgents() {
     setNotifications(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  return { state, connected, history, notifications, dismissNotification };
+  return { state, connected, history, notifications, dismissNotification, agentOutputs };
 }
 
 // ─── API helpers ────────────────────────────────────────
@@ -120,6 +131,12 @@ export async function getAgentLogs(
   cwd: string
 ): Promise<{ logs: LogEntry[] }> {
   return apiFetch(`/agents/${pid}/logs?cwd=${encodeURIComponent(cwd)}`);
+}
+
+export async function getAgentOutput(
+  pid: number
+): Promise<{ lines: string[] }> {
+  return apiFetch(`/agents/${pid}/output`);
 }
 
 export async function getWorkflows(): Promise<{ workflows: Workflow[] }> {
@@ -229,6 +246,44 @@ export async function createFromTemplate(
   return apiFetch(`/workflow-templates/${templateId}/create`, {
     method: 'POST',
     body: JSON.stringify({ cwd }),
+  });
+}
+
+// ─── Agent templates ─────────────────────────────────────
+
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  icon?: string;
+  prompt: string;
+  model?: string;
+  cwd?: string;
+  createdAt: number;
+}
+
+export async function getAgentTemplates(): Promise<{ templates: AgentTemplate[] }> {
+  return apiFetch('/agent-templates');
+}
+
+export async function createAgentTemplate(
+  data: { name: string; prompt: string; icon?: string; model?: string; cwd?: string }
+): Promise<AgentTemplate> {
+  return apiFetch('/agent-templates', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAgentTemplate(id: string): Promise<void> {
+  await apiFetch(`/agent-templates/${id}`, { method: 'DELETE' });
+}
+
+export async function importAgentTemplate(
+  opcodeConfig: Record<string, unknown>
+): Promise<AgentTemplate> {
+  return apiFetch('/agent-templates/import', {
+    method: 'POST',
+    body: JSON.stringify(opcodeConfig),
   });
 }
 

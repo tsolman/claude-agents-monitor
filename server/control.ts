@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
+import { createInterface } from 'readline';
 import fs from 'fs';
 
 export async function stopAgent(
@@ -55,6 +56,7 @@ function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
 export interface StartAgentOptions {
   prompt: string;
   cwd: string;
+  onOutput?: (pid: number, line: string) => void;
 }
 
 // Resolve the full path to claude binary once at startup
@@ -63,6 +65,20 @@ try {
   claudePath = execSync('which claude', { encoding: 'utf-8' }).trim();
 } catch {
   // claude not found in PATH -- will fail at spawn time
+}
+
+// ─── Agent output buffer ─────────────────────────────────
+const MAX_OUTPUT_LINES = 500;
+const outputBuffers = new Map<number, string[]>();
+const outputComplete = new Set<number>();
+
+export function getAgentOutput(pid: number): string[] {
+  return outputBuffers.get(pid) || [];
+}
+
+export function clearAgentOutput(pid: number): void {
+  outputBuffers.delete(pid);
+  outputComplete.delete(pid);
 }
 
 export function startAgent(
@@ -82,10 +98,10 @@ export function startAgent(
 
     const bin = claudePath || 'claude';
 
-    const child = spawn(bin, ['-p', options.prompt], {
+    const child = spawn(bin, ['-p', '--output-format', 'stream-json', options.prompt], {
       cwd: options.cwd,
       detached: true,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let settled = false;
@@ -103,7 +119,21 @@ export function startAgent(
       if (!settled) {
         settled = true;
         if (child.pid) {
-          child.unref();
+          if (child.stdout) {
+            const rl = createInterface({ input: child.stdout });
+            rl.on('line', (line: string) => {
+              const buf = outputBuffers.get(child.pid!) || [];
+              buf.push(line);
+              if (buf.length > MAX_OUTPUT_LINES) buf.shift();
+              outputBuffers.set(child.pid!, buf);
+              options.onOutput?.(child.pid!, line);
+            });
+          }
+
+          child.on('close', () => {
+            if (child.pid) outputComplete.add(child.pid);
+          });
+
           resolve({ success: true, pid: child.pid });
         } else {
           resolve({ success: false, error: 'Failed to spawn process (no PID)' });

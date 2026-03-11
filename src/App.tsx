@@ -49,7 +49,7 @@ function timeAgo(timestamp: number): string {
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('monitor');
   const [now, setNow] = useState(Date.now());
-  const { state, connected, history, notifications, dismissNotification } =
+  const { state, connected, history, notifications, dismissNotification, agentOutputs } =
     useAgents();
 
   // Update "time ago" every second
@@ -177,7 +177,7 @@ export default function App() {
       {/* Content */}
       <main className="mx-auto max-w-6xl px-6 py-8 animate-fade-in">
         {activeTab === 'monitor' && (
-          <Dashboard state={state} connected={connected} history={history} />
+          <Dashboard state={state} connected={connected} history={history} agentOutputs={agentOutputs} />
         )}
         {activeTab === 'workflows' && <WorkflowView />}
         {activeTab === 'history' && <HistoryView history={history} />}

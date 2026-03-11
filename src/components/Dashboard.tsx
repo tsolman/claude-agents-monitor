@@ -9,6 +9,7 @@ interface DashboardProps {
   state: MonitorState | null;
   connected: boolean;
   history: HistoryEntry[];
+  agentOutputs?: Record<number, string[]>;
 }
 
 function findProjectForAgent(cwd: string | null, projects: ProjectInfo[]): ProjectInfo | null {
@@ -24,7 +25,7 @@ function findProjectForAgent(cwd: string | null, projects: ProjectInfo[]): Proje
   return best;
 }
 
-export function Dashboard({ state, connected, history }: DashboardProps) {
+export function Dashboard({ state, connected, history, agentOutputs = {} }: DashboardProps) {
   const [showLaunch, setShowLaunch] = useState(false);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
 
@@ -165,7 +166,7 @@ export function Dashboard({ state, connected, history }: DashboardProps) {
       ) : (
         <div className="space-y-3 stagger-in">
           {state.agents.map(agent => (
-            <AgentCard key={agent.pid} agent={agent} />
+            <AgentCard key={agent.pid} agent={agent} agentOutputs={agentOutputs} />
           ))}
         </div>
       )}

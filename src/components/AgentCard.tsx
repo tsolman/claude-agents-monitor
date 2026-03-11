@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ClaudeAgent, LogEntry } from '../types';
 import { stopAgent, getAgentLogs, getFullAgentLogs } from '../hooks/useAgents';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -41,12 +41,43 @@ function BarMini({ value, max = 100, color }: { value: number; max?: number; col
   );
 }
 
+function parseStreamLine(line: string): { type: string; text: string } | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (parsed.type === 'assistant' && parsed.message?.content) {
+      const content = parsed.message.content;
+      if (typeof content === 'string') return { type: 'assistant', text: content };
+      if (Array.isArray(content)) {
+        const text = content
+          .filter((c: { type: string }) => c.type === 'text')
+          .map((c: { text: string }) => c.text)
+          .join('');
+        if (text) return { type: 'assistant', text };
+      }
+    }
+    if (parsed.type === 'system') {
+      const text = typeof parsed.message === 'string' ? parsed.message :
+        parsed.subtype ? `[${parsed.subtype}]` : '[system]';
+      return { type: 'system', text };
+    }
+    if (parsed.type === 'result') {
+      const text = parsed.result || parsed.subtype || '[result]';
+      return { type: 'result', text: typeof text === 'string' ? text : JSON.stringify(text) };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function AgentCard({
   agent,
   depth = 0,
+  agentOutputs = {},
 }: {
   agent: ClaudeAgent;
   depth?: number;
+  agentOutputs?: Record<number, string[]>;
 }) {
   const [stopping, setStopping] = useState(false);
   const [forceMode, setForceMode] = useState(false);
@@ -59,7 +90,15 @@ export function AgentCard({
   const [searchLoading, setSearchLoading] = useState(false);
   const [expandedEntries, setExpandedEntries] = useState<Set<number>>(new Set());
   const [loadMoreLevel, setLoadMoreLevel] = useState(0); // 0=initial(50), 1=100, 2=200
+  const [showOutput, setShowOutput] = useState(false);
+  const outputEndRef = useRef<HTMLDivElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (showOutput && outputEndRef.current) {
+      outputEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [showOutput, agentOutputs[agent.pid]?.length]);
 
   const project = extractProject(agent.workingDirectory, agent.command);
   const isSubagent = agent.type === 'subagent';
@@ -302,6 +341,18 @@ export function AgentCard({
                     LOGS
                   </button>
                 )}
+                {agentOutputs[agent.pid] && agentOutputs[agent.pid].length > 0 && (
+                  <button
+                    onClick={() => setShowOutput(!showOutput)}
+                    className={`rounded-md px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
+                      showOutput
+                        ? 'bg-live-dim text-live ring-1 ring-live/20'
+                        : 'text-white/20 hover:bg-surface-3 hover:text-white/40'
+                    }`}
+                  >
+                    OUTPUT
+                  </button>
+                )}
                 {agent.pid > 0 && (
                   <button
                     onClick={handleStopClick}
@@ -433,6 +484,41 @@ export function AgentCard({
               </div>
             </div>
           )}
+
+          {/* Live output panel */}
+          {showOutput && agentOutputs[agent.pid] && (
+            <div className="mt-4 rounded-lg bg-surface-0 ring-1 ring-border-subtle">
+              <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-live animate-pulse" />
+                  <span className="font-mono text-[10px] font-semibold text-live/70">LIVE OUTPUT</span>
+                </div>
+                <span className="font-mono text-[9px] text-white/15">
+                  {agentOutputs[agent.pid].length} lines
+                </span>
+              </div>
+              <div className="max-h-72 overflow-y-auto p-4">
+                <div className="space-y-1">
+                  {agentOutputs[agent.pid].map((line, i) => {
+                    const parsed = parseStreamLine(line);
+                    if (!parsed) return null;
+                    return (
+                      <div key={i} className="font-mono text-[11px] leading-relaxed">
+                        {parsed.type === 'system' ? (
+                          <span className="text-white/15">{parsed.text}</span>
+                        ) : parsed.type === 'result' ? (
+                          <span className="text-accent/60">{parsed.text}</span>
+                        ) : (
+                          <span className="text-white/40">{parsed.text}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div ref={outputEndRef} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -440,7 +526,7 @@ export function AgentCard({
       {agent.children.length > 0 && (
         <div className="relative ml-5 border-l border-border-subtle/40 pl-0">
           {agent.children.map(child => (
-            <AgentCard key={child.pid} agent={child} depth={depth + 1} />
+            <AgentCard key={child.pid} agent={child} depth={depth + 1} agentOutputs={agentOutputs} />
           ))}
         </div>
       )}

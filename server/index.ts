@@ -6,7 +6,7 @@ import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { getMonitorState } from './monitor.js';
-import { stopAgent, startAgent } from './control.js';
+import { stopAgent, startAgent, getAgentOutput } from './control.js';
 import { recordSnapshot, getHistory } from './history.js';
 import { trackLifecycle, getEvents } from './notifications.js';
 import { getSessionLogs, getFullSessionLogs, getProjectSessions } from './logs.js';
@@ -34,6 +34,7 @@ import {
   createWorkflowFromTemplate,
 } from './workflows.js';
 import { getAllProjects } from './projects.js';
+import { getAllTemplates, createTemplate, deleteTemplate, importOpcodeTemplate } from './agentTemplates.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '3100');
@@ -144,7 +145,18 @@ app.post('/api/agents/start', async (req, res) => {
     res.status(400).json({ success: false, error: 'prompt and cwd are required' });
     return;
   }
-  const result = await startAgent({ prompt, cwd });
+  const result = await startAgent({
+    prompt,
+    cwd,
+    onOutput: (pid, line) => {
+      const msg = JSON.stringify({ type: 'agent-output', pid, line });
+      wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(msg);
+        }
+      });
+    },
+  });
   if (!result.success) {
     res.status(400).json(result);
     return;
@@ -161,6 +173,15 @@ app.post('/api/agents/:pid/stop', async (req, res) => {
   const force = req.query.force === 'true';
   const result = await stopAgent(pid, force);
   res.json(result);
+});
+
+app.get('/api/agents/:pid/output', (req, res) => {
+  const pid = parseInt(req.params.pid);
+  if (isNaN(pid)) {
+    res.status(400).json({ error: 'Invalid PID' });
+    return;
+  }
+  res.json({ lines: getAgentOutput(pid) });
 });
 
 // ─── Directory browsing ─────────────────────────────────
@@ -471,6 +492,40 @@ app.post('/api/runs/:id/cancel', (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+// ─── Agent templates ─────────────────────────────────────
+
+app.get('/api/agent-templates', (_req, res) => {
+  res.json({ templates: getAllTemplates() });
+});
+
+app.post('/api/agent-templates', (req, res) => {
+  const { name, prompt, icon, model, cwd } = req.body;
+  if (!name || !prompt) {
+    res.status(400).json({ error: 'name and prompt are required' });
+    return;
+  }
+  const template = createTemplate({ name, prompt, icon, model, cwd });
+  res.json(template);
+});
+
+app.delete('/api/agent-templates/:id', (req, res) => {
+  const ok = deleteTemplate(req.params.id);
+  if (!ok) {
+    res.status(404).json({ error: 'Template not found' });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/agent-templates/import', (req, res) => {
+  const template = importOpcodeTemplate(req.body);
+  if (!template) {
+    res.status(400).json({ error: 'Invalid opcode config or missing prompt' });
+    return;
+  }
+  res.json(template);
 });
 
 // ─── SPA fallback ───────────────────────────────────────
